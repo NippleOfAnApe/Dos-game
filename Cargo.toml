@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.10" # make sure this is the latest version
+toml = "0.7.3" # parse configuration
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]
