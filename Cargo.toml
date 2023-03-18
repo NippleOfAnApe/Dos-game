@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.10" # make sure this is the latest version
+rand = "0.8.5"
 num = "0.4"
 num-derive = "0.3"
 num-traits = "0.2"
