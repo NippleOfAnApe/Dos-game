@@ -240,15 +240,12 @@ fn setup(
     let discard_pile = vec![pile_top_card];
     commands.spawn((
         DiscardPile { cards: discard_pile },
-        CardBundle {
-            sprite: SpriteBundle {
-                texture: asset_server.load(image_name),
-                transform: Transform::from_translation(pile_top_card.pos.unwrap()).with_scale(DISCARD_CARD_SCALE),
-                ..default()
-            },
-            card: pile_top_card,
-            owner: PlayerName::Void,
-        }
+        SpriteBundle {
+            texture: asset_server.load(image_name),
+            transform: Transform::from_translation(pile_top_card.pos.unwrap()).with_scale(DISCARD_CARD_SCALE),
+            ..default()
+        },
+        pile_top_card,
     ));
 
     // Spawn a deck and put unused cards there
@@ -387,8 +384,25 @@ fn draw_card(
 
 fn play_card(
     mut play_event: EventReader<PlayCard>,
+    mut discard_q: Query<(&mut Handle<Image>, &mut Card, &mut DiscardPile)>,
+    mut player_q: Query<(&mut Player, &PlayerName)>,
+    asset_server: Res<AssetServer>,
 ) {
     for event in play_event.iter() {
+        let (mut image, mut top_card, mut pile) = discard_q.single_mut();
+
+        for (mut player, name) in player_q.iter_mut() {
+            if *name == PlayerName::MainPlayer {
+                let mut card = player.cards.remove(event.0);
+                card.pos = Some(Vec3::new(DECK_DISCARD_DISTANCE, 0.0, 0.0));
+                *top_card = card;
+                pile.cards.push(card);
+
+                let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
+                *image = asset_server.load(image_name);
+            }
+        }
+
         info!("Card #: {}", event.0);
     }
 }
@@ -432,12 +446,12 @@ fn test(
 }
 
 fn get_card_index(left: f32, x: f32, counter: usize) -> usize {
-    for i in 1..counter {
-        if x < left + PLAYER_CARDS_SPACING * i as f32 {
+    for i in 0..counter {
+        if x < left + PLAYER_CARDS_SPACING * (i + 1) as f32 {
             return i;
         }
     }
-    counter
+    counter - 1
 }
 
 // Allows to format an enum into sting
