@@ -23,18 +23,22 @@ use num::FromPrimitive;         //access enum values via integer
 
 const HAND_SIZE: usize = 7;
 const PLAYERS_DISTANCE: f32 = 380.0;
-const CARDS_ENEMY_SCALE: Vec3 = Vec3::new(0.6, 0.6, 0.0);
-const CARD_ENEMY_SPACING: f32 = 12.0;
-const CARDS_PLAYER_SCALE: Vec3 = Vec3::new(0.8, 0.8, 0.0);
-const CARD_PLAYER_SPACING: f32 = 50.0;
+
+const ENEMY_CARD_SCALE: Vec3 = Vec3::new(0.6, 0.6, 0.0);
+const PLAYER_CARD_SCALE: Vec3 = Vec3::new(0.8, 0.8, 0.0);
 const DECK_CARD_SCALE: Vec3 = Vec3::new(0.8, 0.8, 0.0);
 const DISCARD_CARD_SCALE: Vec3 = Vec3::new(1.0, 1.0, 0.0);
-const NAME_TEXT_OFFSET_X: f32 = -50.0;
-const NAME_TEXT_OFFSET_Y: f32 = 150.0;
+const PLAYER_CARDS_SPACING: f32 = 50.0;
+const ENEMY_CARDS_SPACING: f32 = 12.0;
+
 const DECK_DISCARD_DISTANCE: f32 = 100.0;
 const FALLBACK_DECK_COLLIDER: Vec2 = Vec2::new(100.0, 150.0);
 
-#[derive(Component, Clone, Copy, Debug, FromPrimitive)]
+const NAME_TEXT_OFFSET_X: f32 = -50.0;
+const NAME_TEXT_OFFSET_Y: f32 = 150.0;
+
+
+#[derive(Clone, Copy, Debug, FromPrimitive)]
 enum Rank {
     Zero,
     One,
@@ -53,7 +57,7 @@ enum Rank {
     WildDraw4
 }
 
-#[derive(Component, Clone, Copy, Debug, FromPrimitive)]
+#[derive(Clone, Copy, Debug, FromPrimitive)]
 enum Suit {
     Red,
     Blue,
@@ -61,7 +65,7 @@ enum Suit {
     Green,
 }
 
-#[derive(Debug, Component, PartialEq, Eq, Clone, Copy, FromPrimitive)]
+#[derive(Component, Debug, PartialEq, Eq, Clone, Copy, FromPrimitive)]
 enum PlayerName{
     MainPlayer,
     Player1,
@@ -76,18 +80,17 @@ enum PlayerName{
     Void,
 }
 
-#[derive(Clone, Copy, Component, Debug)]
+#[derive(Component, Clone, Copy, Debug)]
 struct Card {
     rank: Rank,
     suite: Suit,
     pos: Option<Vec3>,
-    // TODO might be redundant in the future
-    owner: Option<PlayerName>,
 }
 
 #[derive(Bundle)]
 struct CardBundle {
     card: Card,
+    owner: PlayerName,
     #[bundle]
     sprite: SpriteBundle,
 }
@@ -98,11 +101,12 @@ struct Deck {
 }
 
 #[derive(Component, Debug)]
-struct DiscardPile(Vec3);
+struct DiscardPile {
+    cards: Vec<Card>,
+}
 
 #[derive(Component, Debug)]
 struct Player {
-    name: PlayerName,
     pos: Vec3,
     cards: Vec<Card>,
 }
@@ -112,6 +116,8 @@ struct GameRules {
     move_made: bool,
     player_turn: PlayerName,
 }
+
+struct PlayCard(usize);
 
 #[derive(Default)]
 struct DrawCard;
@@ -125,11 +131,13 @@ impl Plugin for GamePlugin {
                 player_turn: PlayerName::MainPlayer,
             })
             .add_event::<DrawCard>()
+            .add_event::<PlayCard>()
             .add_system(setup.in_schedule(OnEnter(GameState::InGame)))
             .add_system(menu.in_set(OnUpdate(GameState::InGame)))
             .add_system(check_deck_bounds.run_if(mouse_pressed).in_set(OnUpdate(GameState::InGame)))
-            // Update after drawing so that EventWriter goes before EventReader
+            // EventWriter goes before EventReader
             .add_system(draw_card.after(check_deck_bounds).in_set(OnUpdate(GameState::InGame)))
+            .add_system(play_card.after(check_deck_bounds).in_set(OnUpdate(GameState::InGame)))
             // TODO it doesnt remove entities without transform
             .add_system(despawn_screen::<Transform, Camera>.in_schedule(OnExit(GameState::InGame)))
             .add_system(test);
@@ -154,7 +162,6 @@ fn setup(
                 rank: Rank::from_u32(rank).unwrap(),
                 suite: Suit::from_u32(color).unwrap(),
                 pos: None,
-                owner: None,
             });
         }
     }
@@ -170,34 +177,46 @@ fn setup(
         // move cards from a deck to a player's hand
         let mut player_hand: Vec<Card> = new_deck.drain(..HAND_SIZE).collect();
 
-        // assign a position + owner for each card in hand
+        // Spawn images of each card in hand.
+        // Assign to it a corresponding card, player name and position
         player_hand.iter_mut().enumerate().for_each(|(j, card)| {
-            card.owner = Some(PlayerName::from_usize(i).unwrap());
-            // If holder is not a MainPlayer then use enemy card spacing
-            card.pos = Some(Vec3::new(
-                    x + (j as f32) * if card.owner != Some(PlayerName::MainPlayer) { CARD_ENEMY_SPACING } else { CARD_PLAYER_SPACING },
-                    y, j as f32));
-        });
+            // If not a MainPlayer
+            if i != 0 {
+                card.pos = Some(Vec3::new(x + (j as f32) * ENEMY_CARDS_SPACING, y, j as f32));
 
-        // Spawn and render every card in a hand
-        // TODO combin this and position assignment into single iter
-        player_hand.iter().for_each(|card| {
-            commands.spawn(CardBundle {
-                sprite: SpriteBundle {
-                    // If hand is not a player's - draw a card's back image instead
-                    texture: if card.owner != Some(PlayerName::MainPlayer) { tex_back.clone() } else {
-                        let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
-                        asset_server.load(image_name)
-                    },
-                    transform: Transform {
-                        translation: card.pos.unwrap(),
-                        scale: if card.owner != Some(PlayerName::MainPlayer) {CARDS_ENEMY_SCALE} else {CARDS_PLAYER_SCALE},
+                commands.spawn(CardBundle {
+                    owner: PlayerName::from_usize(i).unwrap(),
+                    sprite: SpriteBundle {
+                        // If hand is not player's - load a card's back image
+                        texture: tex_back.clone(),
+                        transform: Transform {
+                            translation: card.pos.unwrap(),
+                            scale: ENEMY_CARD_SCALE,
+                            ..default()
+                        },
                         ..default()
                     },
-                    ..default()
-                },
-                card: *card,
-            });
+                    card: *card,
+                });
+            } else {
+                card.pos = Some(Vec3::new(x + (j as f32) * PLAYER_CARDS_SPACING, y, j as f32));
+                // If MainPlayer's hand - load a front image instead instead of a back image
+                let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
+
+                commands.spawn(CardBundle {
+                    owner: PlayerName::from_usize(i).unwrap(),
+                    sprite: SpriteBundle {
+                        texture: asset_server.load(image_name),
+                        transform: Transform {
+                            translation: card.pos.unwrap(),
+                            scale: PLAYER_CARD_SCALE,
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    card: *card,
+                });
+            }
         });
 
         // Text of Player's name on top of a hand
@@ -208,31 +227,31 @@ fn setup(
         });
 
         // Spawn a player and give him a name from enum of PlayerName
-        commands.spawn(Player {
-            name: PlayerName::from_usize(i).unwrap(),
-            pos: Vec3::new(x, y, 0.0),
-            cards: player_hand,
-        });
+        commands.spawn((PlayerName::from_usize(i).unwrap(),
+            Player { pos: Vec3::new(x, y, 0.0), cards: player_hand },
+        ));
     }
 
     // Put a card from a deck to a discard pile
+    // TODO check if no cards left in a deck
     let mut pile_top_card = new_deck.pop().unwrap();
-    pile_top_card.owner = Some(PlayerName::Void);
     pile_top_card.pos = Some(Vec3::new(DECK_DISCARD_DISTANCE, 0.0, 0.0));
     let image_name = format!("{}_{}.png", pile_top_card.suite.to_string(), pile_top_card.rank.to_string());
+    let discard_pile = vec![pile_top_card];
     commands.spawn((
-        DiscardPile(pile_top_card.pos.unwrap()),
+        DiscardPile { cards: discard_pile },
         CardBundle {
             sprite: SpriteBundle {
                 texture: asset_server.load(image_name),
                 transform: Transform::from_translation(pile_top_card.pos.unwrap()).with_scale(DISCARD_CARD_SCALE),
                 ..default()
             },
-            card: pile_top_card
+            card: pile_top_card,
+            owner: PlayerName::Void,
         }
     ));
 
-    // Create a vector with references to spawned cards
+    // Spawn a deck and put unused cards there
     commands.spawn((
         Deck { cards: new_deck },
         SpriteBundle {
@@ -248,13 +267,14 @@ fn mouse_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool {
 }
 
 fn check_deck_bounds(
-    camera_q: Query<(&Camera, &GlobalTransform)>,
     window_q: Query<&Window>,
-    deck_q: Query<(&Handle<Image>, &Transform), With<Deck>>,
-    card_q: Query<(&Handle<Image>, &Card)>,
-    player_q: Query<&Player>,
+    camera_q: Query<(&Camera, &GlobalTransform)>,
+    deck_q: Query<&Handle<Image>, With<Deck>>,
+    card_q: Query<(&Handle<Image>, &PlayerName)>,
+    player_q: Query<(&Player, &PlayerName)>,
     all_images: Res<Assets<Image>>,
-    mut card_event: EventWriter<DrawCard>,
+    mut deck_event: EventWriter<DrawCard>,
+    mut card_event: EventWriter<PlayCard>,
 ) {
     let window = window_q.single();
     let (camera, camera_pos) = camera_q.single();
@@ -263,38 +283,51 @@ fn check_deck_bounds(
     // If yes - transform cursor's position from global position to 2D world position
     if let Some(cursor_pos) = window.cursor_position().and_then(|cursor| camera.viewport_to_world_2d(camera_pos, cursor)) {
 
-        //----------- REFACTOR!!!---------
-        let mut player_card_pos: Vec3 = Vec3::ZERO;
+        /*********Check if clicked on your hand*********/
+
+        // Get the size of a card to determine a collider
         let mut card_image_size: Vec2 = Vec2::ZERO;
-        for (card_image, card) in card_q.iter() {
-            if let Some(player) = card.owner {
-                player_card_pos = card.pos.unwrap();
+        for (card_image, name) in card_q.iter() {
+            if *name == PlayerName::MainPlayer {
+                // TODO prevent loading game dureing setup if image couldn't be loaded
                 card_image_size = if let Some(image) = all_images.get(&card_image) { image.size() } else { FALLBACK_DECK_COLLIDER };
                 break;
             }
         }
+        // Bounds for deck image
+        let card_x_offset: f32 = card_image_size.x * PLAYER_CARD_SCALE.x / 2.0;
+        let card_y_offset: f32 = card_image_size.y * PLAYER_CARD_SCALE.y / 2.0;
 
+        // Detrmin how many cards are in a hand and where is player located
         let mut counter: usize = 0;
-        for player in player_q.iter() {
-            if player.name == PlayerName::MainPlayer {
+        let mut player_pos: Vec3 = Vec3::ZERO;
+        for (player, name) in player_q.iter() {
+            if *name == PlayerName::MainPlayer {
                 counter = player.cards.len();
+                player_pos = player.pos;
                 break;
             }
         }
-        let card_x_offset: f32 = card_image_size.x * CARDS_PLAYER_SCALE.x / 2.0;
-        let card_y_offset: f32 = card_image_size.y * CARDS_PLAYER_SCALE.y / 2.0;
 
-        if cursor_pos.x > player_card_pos.x - card_x_offset &&
-            cursor_pos.x < player_card_pos.x + card_x_offset + CARD_PLAYER_SPACING * (counter - 1) as f32 &&
-            cursor_pos.y > player_card_pos.y - card_y_offset &&
-            cursor_pos.y < player_card_pos.y + card_y_offset {
-                let num_card = do_cum(player_card_pos.x, cursor_pos.x, counter);
-                info!("Left edge: {}\tCursor X: {}", player_card_pos.x, cursor_pos.x);
-                info!("#{}", num_card);
+        let left_edge = player_pos.x - card_x_offset;
+        //          +y_offset
+        //           ___ 
+        //          |   |
+        //-x_offset | · | +x_offset
+        //          |___|
+        //          -y_offset
+        if cursor_pos.x > left_edge &&
+            cursor_pos.x < player_pos.x + card_x_offset + PLAYER_CARDS_SPACING * (counter - 1) as f32 &&
+            cursor_pos.y > player_pos.y - card_y_offset &&
+            cursor_pos.y < player_pos.y + card_y_offset {
+                let num_card = get_card_index(player_pos.x - card_x_offset, cursor_pos.x, counter);
+                card_event.send(PlayCard(num_card));
+                return;
         }
-        //----------- REFACTOR!!!---------
 
-        let (deck_image, deck_pos) = deck_q.single();
+        /*********Check if clicked on a deck*********/
+
+        let deck_image = deck_q.single();
         // If deck's image was properly loaded - find it using a deck's image handle
         // from all images in a world. Otherwise use user defined size
         let deck_image_size: Vec2 = if let Some(image) = all_images.get(&deck_image) { image.size() } else { FALLBACK_DECK_COLLIDER };
@@ -302,27 +335,21 @@ fn check_deck_bounds(
         let x_offset = deck_image_size.x * DECK_CARD_SCALE.x / 2.0;
         let y_offset = deck_image_size.y * DECK_CARD_SCALE.y / 2.0;
 
-        //          +y_offset
-        //           ___ 
-        //          |   |
-        //-x_offset | · | +x_offset
-        //          |___|
-        //          -y_offset
-        if cursor_pos.x > deck_pos.translation.x - x_offset &&
-            cursor_pos.x < deck_pos.translation.x + x_offset &&
-            cursor_pos.y > deck_pos.translation.y - y_offset &&
-            cursor_pos.y < deck_pos.translation.y + y_offset {
-                card_event.send_default();
+        if cursor_pos.x > -DECK_DISCARD_DISTANCE - x_offset &&
+            cursor_pos.x < -DECK_DISCARD_DISTANCE + x_offset &&
+            cursor_pos.y > -y_offset &&
+            cursor_pos.y < y_offset {
+                deck_event.send_default();
         }
     }
 }
 
 fn draw_card(
     mut commands: Commands,
-    mut player_q: Query<&mut Player>,
+    mut player_q: Query<(&mut Player, &PlayerName)>,
     mut deck_q: Query<&mut Deck>,
-    mut event: EventReader<DrawCard>,
     asset_server: Res<AssetServer>,
+    mut event: EventReader<DrawCard>,
 ) {
     // Continue only on receiving an event
     for _ in event.iter() {
@@ -330,12 +357,11 @@ fn draw_card(
 
         // Check whether a deck has cards
         if let Some(mut card) = deck.cards.pop() {
-            card.owner = Some(PlayerName::MainPlayer);
-            for mut player in player_q.iter_mut() {
-                if let PlayerName::MainPlayer = player.name {
+            for (mut player, name) in player_q.iter_mut() {
+                if *name == PlayerName::MainPlayer {
                     // Calculate position of a new card depending on how many cards are in a hand
                     let counter = player.cards.len();
-                    card.pos = Some(Vec3::new(player.pos.x + CARD_PLAYER_SPACING * counter as f32, player.pos.y, counter as f32));
+                    card.pos = Some(Vec3::new(player.pos.x + PLAYER_CARDS_SPACING * counter as f32, player.pos.y, counter as f32));
                     player.cards.push(card);
                 }
             }
@@ -348,13 +374,22 @@ fn draw_card(
                     texture: asset_server.load(image_name),
                     transform: Transform {
                         translation: card.pos.unwrap(),
-                        scale: CARDS_PLAYER_SCALE,
+                        scale: PLAYER_CARD_SCALE,
                         ..default()
                     },
                     ..default()
                 },
+                owner: PlayerName::MainPlayer,
             });
         }
+    }
+}
+
+fn play_card(
+    mut play_event: EventReader<PlayCard>,
+) {
+    for event in play_event.iter() {
+        info!("Card #: {}", event.0);
     }
 }
 
@@ -391,32 +426,14 @@ fn test(
         info!("Cursor position: {}", window.cursor_position().unwrap());
     }
 
-    if key.just_pressed(KeyCode::Space) {
-        for player in &player_q {
-            if let PlayerName::MainPlayer = player.name {
-                player.cards.iter().for_each(|card| { info!("Card as a regular struct{:?}", card.pos.unwrap())});
-            }
-        }
-        for card in card_q.iter() {
-            if let Some(PlayerName::MainPlayer) = card.owner {
-                info!("Card as entities{:?}", card.pos.unwrap());
-            }
-        }
-        for (pos, card) in transform_q.iter() {
-            if let Some(PlayerName::MainPlayer) = card.owner {
-                info!("Card transform of sprit bundles{:?}", pos.translation);
-            }
-        }
-    }
-
     if key.just_pressed(KeyCode::R) {
         game_rules.move_made = !game_rules.move_made;
     }
 }
 
-fn do_cum(left: f32, x: f32, counter: usize) -> usize {
+fn get_card_index(left: f32, x: f32, counter: usize) -> usize {
     for i in 1..counter {
-        if x < left + CARD_PLAYER_SPACING * i as f32 {
+        if x < left + PLAYER_CARDS_SPACING * i as f32 {
             return i;
         }
     }
