@@ -1,3 +1,14 @@
+/************************************************
+*                                               *
+*   Ви, байстрюки катів осатанілих,             *
+*   Не забувайте, виродки, ніде:                *
+*   Народ мій є! В його гарячих жилах           *
+*   Козацька кров пульсує і гуде!               *
+*                                               *
+*                       Василь Симоненко        *
+*                                               *
+************************************************/
+
 use std::fmt::{self, Debug};   // Conver enum variants into string
 use bevy::prelude::*;
 use crate::{despawn_screen, GameState, LOBBY_PLAYERS};
@@ -16,6 +27,8 @@ const CARDS_ENEMY_SCALE: Vec3 = Vec3::new(0.6, 0.6, 0.0);
 const CARD_ENEMY_SPACING: f32 = 12.0;
 const CARDS_PLAYER_SCALE: Vec3 = Vec3::new(0.8, 0.8, 0.0);
 const CARD_PLAYER_SPACING: f32 = 50.0;
+const DECK_CARD_SCALE: Vec3 = Vec3::new(0.8, 0.8, 0.0);
+const DISCARD_CARD_SCALE: Vec3 = Vec3::new(1.0, 1.0, 0.0);
 const NAME_TEXT_OFFSET_X: f32 = -50.0;
 const NAME_TEXT_OFFSET_Y: f32 = 150.0;
 const DECK_DISCARD_DISTANCE: f32 = 100.0;
@@ -159,7 +172,7 @@ fn setup(
 
         // assign a position + owner for each card in hand
         player_hand.iter_mut().enumerate().for_each(|(j, card)| {
-            card.owner = Some(PlayerName::from_u32(i).unwrap());
+            card.owner = Some(PlayerName::from_usize(i).unwrap());
             // If holder is not a MainPlayer then use enemy card spacing
             card.pos = Some(Vec3::new(
                     x + (j as f32) * if card.owner != Some(PlayerName::MainPlayer) { CARD_ENEMY_SPACING } else { CARD_PLAYER_SPACING },
@@ -196,7 +209,7 @@ fn setup(
 
         // Spawn a player and give him a name from enum of PlayerName
         commands.spawn(Player {
-            name: PlayerName::from_u32(i).unwrap(),
+            name: PlayerName::from_usize(i).unwrap(),
             pos: Vec3::new(x, y, 0.0),
             cards: player_hand,
         });
@@ -212,7 +225,7 @@ fn setup(
         CardBundle {
             sprite: SpriteBundle {
                 texture: asset_server.load(image_name),
-                transform: Transform::from_translation(pile_top_card.pos.unwrap()).with_scale(CARDS_PLAYER_SCALE),
+                transform: Transform::from_translation(pile_top_card.pos.unwrap()).with_scale(DISCARD_CARD_SCALE),
                 ..default()
             },
             card: pile_top_card
@@ -224,12 +237,10 @@ fn setup(
         Deck { cards: new_deck },
         SpriteBundle {
             texture: tex_back.clone(),
-            transform: Transform::from_xyz(-DECK_DISCARD_DISTANCE, 0.0, 0.0).with_scale(CARDS_PLAYER_SCALE),
+            transform: Transform::from_xyz(-DECK_DISCARD_DISTANCE, 0.0, 0.0).with_scale(DECK_CARD_SCALE),
             ..default()
         }
     ));
-
-    info!("cards have been dealt");
 }
 
 fn mouse_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool {
@@ -240,6 +251,8 @@ fn check_deck_bounds(
     camera_q: Query<(&Camera, &GlobalTransform)>,
     window_q: Query<&Window>,
     deck_q: Query<(&Handle<Image>, &Transform), With<Deck>>,
+    card_q: Query<(&Handle<Image>, &Card)>,
+    player_q: Query<&Player>,
     all_images: Res<Assets<Image>>,
     mut card_event: EventWriter<DrawCard>,
 ) {
@@ -249,14 +262,45 @@ fn check_deck_bounds(
     // First make sure that click was inside a window.
     // If yes - transform cursor's position from global position to 2D world position
     if let Some(cursor_pos) = window.cursor_position().and_then(|cursor| camera.viewport_to_world_2d(camera_pos, cursor)) {
-        let (deck_image, deck_pos) = deck_q.single();
 
+        //----------- REFACTOR!!!---------
+        let mut player_card_pos: Vec3 = Vec3::ZERO;
+        let mut card_image_size: Vec2 = Vec2::ZERO;
+        for (card_image, card) in card_q.iter() {
+            if let Some(player) = card.owner {
+                player_card_pos = card.pos.unwrap();
+                card_image_size = if let Some(image) = all_images.get(&card_image) { image.size() } else { FALLBACK_DECK_COLLIDER };
+                break;
+            }
+        }
+
+        let mut counter: usize = 0;
+        for player in player_q.iter() {
+            if player.name == PlayerName::MainPlayer {
+                counter = player.cards.len();
+                break;
+            }
+        }
+        let card_x_offset: f32 = card_image_size.x * CARDS_PLAYER_SCALE.x / 2.0;
+        let card_y_offset: f32 = card_image_size.y * CARDS_PLAYER_SCALE.y / 2.0;
+
+        if cursor_pos.x > player_card_pos.x - card_x_offset &&
+            cursor_pos.x < player_card_pos.x + card_x_offset + CARD_PLAYER_SPACING * (counter - 1) as f32 &&
+            cursor_pos.y > player_card_pos.y - card_y_offset &&
+            cursor_pos.y < player_card_pos.y + card_y_offset {
+                let num_card = do_cum(player_card_pos.x, cursor_pos.x, counter);
+                info!("Left edge: {}\tCursor X: {}", player_card_pos.x, cursor_pos.x);
+                info!("#{}", num_card);
+        }
+        //----------- REFACTOR!!!---------
+
+        let (deck_image, deck_pos) = deck_q.single();
         // If deck's image was properly loaded - find it using a deck's image handle
         // from all images in a world. Otherwise use user defined size
-        let image_size: Vec2 = if let Some(image) = all_images.get(&deck_image) { image.size() } else { FALLBACK_DECK_COLLIDER };
+        let deck_image_size: Vec2 = if let Some(image) = all_images.get(&deck_image) { image.size() } else { FALLBACK_DECK_COLLIDER };
         // Bounds for deck image
-        let x_offset = image_size.x * CARDS_PLAYER_SCALE.x / 2.0;
-        let y_offset = image_size.y * CARDS_PLAYER_SCALE.y / 2.0;
+        let x_offset = deck_image_size.x * DECK_CARD_SCALE.x / 2.0;
+        let y_offset = deck_image_size.y * DECK_CARD_SCALE.y / 2.0;
 
         //          +y_offset
         //           ___ 
@@ -328,6 +372,8 @@ fn test(
     camera_q: Query<(&Camera, &GlobalTransform)>,
     mut game_rules: ResMut<GameRules>,
     player_q: Query<&Player>,
+    card_q: Query<&Card>,
+    transform_q: Query<(&Transform, &Card)>,
     key: Res<Input<KeyCode>>,
     window_q: Query<&Window>,
 ) {
@@ -348,7 +394,17 @@ fn test(
     if key.just_pressed(KeyCode::Space) {
         for player in &player_q {
             if let PlayerName::MainPlayer = player.name {
-                player.cards.iter().for_each(|card| { info!("{}", card.pos.unwrap().z)});
+                player.cards.iter().for_each(|card| { info!("Card as a regular struct{:?}", card.pos.unwrap())});
+            }
+        }
+        for card in card_q.iter() {
+            if let Some(PlayerName::MainPlayer) = card.owner {
+                info!("Card as entities{:?}", card.pos.unwrap());
+            }
+        }
+        for (pos, card) in transform_q.iter() {
+            if let Some(PlayerName::MainPlayer) = card.owner {
+                info!("Card transform of sprit bundles{:?}", pos.translation);
             }
         }
     }
@@ -356,6 +412,15 @@ fn test(
     if key.just_pressed(KeyCode::R) {
         game_rules.move_made = !game_rules.move_made;
     }
+}
+
+fn do_cum(left: f32, x: f32, counter: usize) -> usize {
+    for i in 1..counter {
+        if x < left + CARD_PLAYER_SPACING * i as f32 {
+            return i;
+        }
+    }
+    counter
 }
 
 // Allows to format an enum into sting

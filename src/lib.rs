@@ -7,7 +7,7 @@ use crate::game::GamePlugin;
 use bevy::prelude::*;
 use bevy::app::App;
 
-pub const LOBBY_PLAYERS: u32 = 5;
+pub const LOBBY_PLAYERS: usize = 5;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 enum GameState {
