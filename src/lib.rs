@@ -1,3 +1,4 @@
+#![feature(variant_count)]
 mod menu;
 mod game;
 
