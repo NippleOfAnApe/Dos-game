@@ -3,11 +3,11 @@ Blazingly fast Uno game with a customizable ruleset
 
 ## Setup
 
-### To run locally in a new window
-This project uses a [mold](https://github.com/rui314/mold) linker, so you will need to download it. Otherwise just remove a linker from .cargo/config.toml.
+### To run locally
 
-1. Clone repo
-2. `cargo run'
+Clone a repo and `cargo run`. 
+This project uses a [mold](https://github.com/rui314/mold) linker. If you don't have it installed just remove a linker flag from .cargo/config.toml.
+To build with all the optimization run `cargo build --release` and executable will be at /target folder.
 
 ### To run in a web browser
 ``` rustup target install wasm32-unknown-unknown
@@ -24,72 +24,33 @@ You will have a build that you can host on a website
 
 ## Entities
 
+```
 Player Bundle
 ∟PlayerName
 ∟Player
+∟MainPlayer (optional)
 
-Text
+Text    // Text with player names
 
 Card Bundle
-∟Card
-∟PlayerName
+∟Id
 ∟SpriteBundle
+ ∟Handle<Image>
+ ∟Transform
  ∟...
 
 Discarded Cards
 ∟DiscardPile
-∟CardBundle
- ∟Card
- ∟PlayerName
- ∟SpriteBundle
-  ∟...
+∟SpriteBundle
+ ∟Handle<Image>
+ ∟Transform
+ ∟...
 
 Deck Bundle
 ∟Deck
 ∟SpriteBundle
+ ∟Handle<Image>
+ ∟Transform
  ∟...
-
-Unless card is inside a deck, it has a position
-
-## Components
-
-```
-#[derive(Component, ...]
-struct Card {
-    rank: Rank,
-    suite: Suit,
-    pos: Option<Vec3>,
-}
-
-#[derive(Component, ...]
-struct Deck {
-    cards: Vec<Card>,
-}
-
-#[derive(Component, ...]
-struct DiscardPile {
-    cards: Vec<Card>,
-}
-
-#[derive(Component, ...]
-struct Player {
-    pos: Vec3,
-    cards: Vec<Card>,
-}
-
-#[derive(Component, ...]
-enum PlayerName{
-    MainPlayer,
-    Player1,
-    Player2,
-    Player3,
-    Player4,
-    Player5,
-    Player6,
-    Player7,
-    Player8,
-    Player9,
-    Void,
-}
 
 ```
