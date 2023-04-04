@@ -188,11 +188,8 @@ fn setup(
         // move cards from a deck to a player's hand
         let mut player_hand: Vec<Card> = new_deck.drain(..HAND_SIZE).collect();
 
-        // Spawn images of each card in hand.
-        // Assign to it a corresponding card, player name and position
-        player_hand.iter_mut().enumerate().for_each(|(j, card)| {
-            // If not a MainPlayer
-            if i != 0 {
+        if i != 0 {
+            player_hand.iter_mut().enumerate().for_each(|(j, card)| {
                 card.pos = Box::new(Vec3::new(x + (j as f32) * ENEMY_CARDS_SPACING, y, j as f32));
 
                 commands.spawn(CardBundle {
@@ -208,7 +205,15 @@ fn setup(
                     },
                     id: Id(card.id),
                 });
-            } else {
+
+            });
+
+            // Spawn a player and give him a name from enum of PlayerName
+            commands.spawn((PlayerName::from_usize(i).unwrap(),
+                Player { pos: Vec3::new(x, y, 0.0), cards: player_hand },
+            ));
+        } else {
+            player_hand.iter_mut().enumerate().for_each(|(j, card)| {
                 card.pos = Box::new(Vec3::new(x + (j as f32) * PLAYER_CARDS_SPACING, y, j as f32));
                 // If MainPlayer's hand - load a front image instead instead of a back image
                 let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
@@ -225,8 +230,15 @@ fn setup(
                     },
                     id: Id(card.id),
                 });
-            }
-        });
+
+            });
+
+            // Spawn a player and give him a name from enum of PlayerName
+            commands.spawn((PlayerName::MainPlayer,
+                Player { pos: Vec3::new(x, y, 0.0), cards: player_hand },
+                MainPlayer,
+            ));
+        }
 
         // Text of Player's name on top of a hand
         commands.spawn(Text2dBundle {
@@ -235,10 +247,6 @@ fn setup(
             ..default()
         });
 
-        // Spawn a player and give him a name from enum of PlayerName
-        commands.spawn((PlayerName::from_usize(i).unwrap(),
-            Player { pos: Vec3::new(x, y, 0.0), cards: player_hand },
-        ));
     }
 
     // Put a card from a deck to a discard pile
@@ -277,7 +285,7 @@ fn check_deck_bounds(
     camera_q: Query<(&Camera, &GlobalTransform)>,
     deck_q: Query<&Handle<Image>, With<Deck>>,
     card_q: Query<(&Handle<Image>, &Id)>,
-    player_q: Query<(&Player, &PlayerName)>,
+    player_q: Query<&Player, With<MainPlayer>>,
     all_images: Res<Assets<Image>>,
     mut deck_event: EventWriter<DrawCard>,
     mut card_event: EventWriter<PlayCard>,
@@ -316,22 +324,13 @@ fn check_deck_bounds(
         /*********Check if clicked on your hand*********/
 
         // Detrmin how many cards are in a hand and where is player located
-        let mut counter: usize = 0;
-        let mut player_pos: Vec3 = Vec3::ZERO;
-        let mut card_id: usize = 0;
-        for (player, name) in player_q.iter() {
-            if *name == PlayerName::MainPlayer {
-                counter = player.cards.len();
-                player_pos = player.pos;
-                card_id = player.cards[0].id;
-                break;
-            }
-        }
+        let player = player_q.single();
+        let counter: usize = player.cards.len();
 
         // Get the size of a card to determine a collider
         let mut card_image_size: Vec2 = Vec2::ZERO;
         for (card_image, id) in card_q.iter() {
-            if id.0 == card_id {
+            if id.0 == player.cards[0].id {
                 // TODO prevent loading game dureing setup if image couldn't be loaded
                 card_image_size = if let Some(image) = all_images.get(&card_image) { image.size() } else { FALLBACK_DECK_COLLIDER };
                 break;
@@ -341,12 +340,12 @@ fn check_deck_bounds(
         let card_x_offset: f32 = card_image_size.x * PLAYER_CARD_SCALE.x / 2.0;
         let card_y_offset: f32 = card_image_size.y * PLAYER_CARD_SCALE.y / 2.0;
 
-        let left_edge = player_pos.x - card_x_offset;
+        let left_edge = player.pos.x - card_x_offset;
         if cursor_pos.x > left_edge &&
-            cursor_pos.x < player_pos.x + card_x_offset + PLAYER_CARDS_SPACING * (counter - 1) as f32 &&
-            cursor_pos.y > player_pos.y - card_y_offset &&
-            cursor_pos.y < player_pos.y + card_y_offset {
-                let num_card = get_card_index(player_pos.x - card_x_offset, cursor_pos.x, counter);
+            cursor_pos.x < player.pos.x + card_x_offset + PLAYER_CARDS_SPACING * (counter - 1) as f32 &&
+            cursor_pos.y > player.pos.y - card_y_offset &&
+            cursor_pos.y < player.pos.y + card_y_offset {
+                let num_card = get_card_index(player.pos.x - card_x_offset, cursor_pos.x, counter);
                 card_event.send(PlayCard(num_card));
         }
 
@@ -355,7 +354,7 @@ fn check_deck_bounds(
 
 fn draw_card(
     mut commands: Commands,
-    mut player_q: Query<(&mut Player, &PlayerName)>,
+    mut player_q: Query<&mut Player, With<MainPlayer>>,
     mut deck_q: Query<&mut Deck>,
     asset_server: Res<AssetServer>,
     mut event: EventReader<DrawCard>,
@@ -366,54 +365,50 @@ fn draw_card(
 
         // Check whether a deck has cards
         if let Some(mut card) = deck.cards.pop() {
+            let mut player = player_q.single_mut();
             // Load and spawn an image with a new new card
             let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
 
-            for (mut player, name) in player_q.iter_mut() {
-                if *name == PlayerName::MainPlayer {
-                    // Calculate position of a new card depending on how many cards are in a hand
-                    let counter = player.cards.len();
-                    card.pos = Box::new(Vec3::new(player.pos.x + PLAYER_CARDS_SPACING * counter as f32, player.pos.y, counter as f32));
-                    commands.spawn(CardBundle {
-                        sprite: SpriteBundle {
-                            texture: asset_server.load(image_name),
-                            transform: Transform {
-                                translation: *card.pos,
-                                scale: PLAYER_CARD_SCALE,
-                                ..default()
-                            },
-                            ..default()
-                        },
-                        id: Id(card.id),
-                    });
-                    player.cards.push(card);
-                    break;
-                }
-            }
-        } else { warn!("No cards lft inside a deck.") }
+            // Calculate position of a new card depending on how many cards are in a hand
+            let counter = player.cards.len();
+            card.pos = Box::new(Vec3::new(player.pos.x + PLAYER_CARDS_SPACING * counter as f32, player.pos.y, counter as f32));
+            commands.spawn(CardBundle {
+                sprite: SpriteBundle {
+                    texture: asset_server.load(image_name),
+                    transform: Transform {
+                        translation: *card.pos,
+                        scale: PLAYER_CARD_SCALE,
+                        ..default()
+                    },
+                    ..default()
+                },
+                id: Id(card.id),
+            });
+            player.cards.push(card);
+        } else {
+            warn!("No cards lft inside a deck.");
+        }
     }
 }
 
 fn play_card(
     mut play_event: EventReader<PlayCard>,
     mut discard_q: Query<(&mut Handle<Image>, &mut Card, &mut DiscardPile)>,
-    mut player_q: Query<(&mut Player, &PlayerName)>,
+    mut player_q: Query<&mut Player, With<MainPlayer>>,
     asset_server: Res<AssetServer>,
 ) {
     for event in play_event.iter() {
         let (mut image, mut top_card, mut pile) = discard_q.single_mut();
+        let mut player = player_q.single_mut();
 
-        for (mut player, name) in player_q.iter_mut() {
-            if *name == PlayerName::MainPlayer {
-                let mut card = player.cards.remove(event.0);
-                card.pos = Box::new(Vec3::new(DECK_DISCARD_DISTANCE, 0.0, 0.0));
-                *top_card = card.clone();
+        let mut card = player.cards.remove(event.0);
+        card.pos = Box::new(Vec3::new(DECK_DISCARD_DISTANCE, 0.0, 0.0));
+        *top_card = card.clone();
 
-                let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
-                *image = asset_server.load(image_name);
-                pile.cards.push(card);
-            }
-        }
+        let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
+        *image = asset_server.load(image_name);
+
+        pile.cards.push(card);
 
         info!("Card #: {}", event.0);
     }
