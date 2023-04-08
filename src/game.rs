@@ -128,6 +128,10 @@ struct CardBundle
     sprite: SpriteBundle,
 }
 
+// Tag component used to tag entities added in game
+#[derive(Component)]
+struct GameItem;
+
 //----------------------------------------------------------------------------------
 //  Resources and Events
 //----------------------------------------------------------------------------------
@@ -160,14 +164,14 @@ impl Plugin for GamePlugin
                 })
             .add_event::<DrawCard>()
             .add_event::<PlayCard>()
-            .add_system(setup.in_schedule(OnEnter(GameState::InGame)))
-            .add_system(menu.in_set(OnUpdate(GameState::InGame)))
-            .add_system(check_deck_bounds.run_if(mouse_pressed).in_set(OnUpdate(GameState::InGame)))
+            .add_system(setup.in_schedule(OnEnter(GameState::Game)))
+            .add_system(menu.in_set(OnUpdate(GameState::Game)))
+            .add_system(check_deck_bounds.run_if(mouse_pressed).in_set(OnUpdate(GameState::Game)))
             // EventWriter goes before EventReader
-            .add_system(draw_card.after(check_deck_bounds).in_set(OnUpdate(GameState::InGame)))
-            .add_system(play_card.after(check_deck_bounds).in_set(OnUpdate(GameState::InGame)))
+            .add_system(draw_card.after(check_deck_bounds).in_set(OnUpdate(GameState::Game)))
+            .add_system(play_card.after(check_deck_bounds).in_set(OnUpdate(GameState::Game)))
             // TODO it doesnt remove entities without transform
-            .add_system(despawn_screen::<Transform, Camera>.in_schedule(OnExit(GameState::InGame)))
+            .add_system(despawn_screen::<GameItem>.in_schedule(OnExit(GameState::Game)))
             .add_system(test);
     }
 }
@@ -180,6 +184,8 @@ fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
+    /********* Initialization *********/
+
     let center = Vec3::ZERO;
     let angle: f32 = 360.0 / LOBBY_PLAYERS as f32;
     let font = asset_server.load("FiraSans-Bold.ttf");
@@ -209,7 +215,8 @@ fn setup(
     }
     new_deck.shuffle(&mut thread_rng());
 
-    // Crate Players and assign to them position + text + hand of cards
+    /********* Create players *********/
+
     for i in 0..LOBBY_PLAYERS
     {
         // Calculate X and Y position
@@ -225,18 +232,22 @@ fn setup(
         {
             for (j, card) in player_hand.iter_mut().enumerate()
             {
-                commands.spawn(CardBundle {
-                    sprite: SpriteBundle {
-                        texture: tex_back.clone(),
-                        transform: Transform::from_xyz(x + (j as f32) * ENEMY_CARDS_SPACING, y, j as f32).with_scale(ENEMY_CARD_SCALE),
-                        ..default()
+                commands.spawn((
+                    CardBundle {
+                        sprite: SpriteBundle {
+                            texture: tex_back.clone(),
+                            transform: Transform::from_xyz(x + (j as f32) * ENEMY_CARDS_SPACING, y, j as f32).with_scale(ENEMY_CARD_SCALE),
+                            ..default()
+                        },
+                        id: Id(card.id),
                     },
-                    id: Id(card.id),
-                });
+                    GameItem
+                ));
             }
             // Spawn a player and give him a name from enum of PlayerName
             commands.spawn((PlayerName::from_usize(i).unwrap(),
                 Player { pos: Vec3::new(x, y, 0.0), cards: player_hand },
+                GameItem,
             ));
         }
         else
@@ -246,14 +257,17 @@ fn setup(
                 // If MainPlayer's hand - load a front image instead of a back image
                 let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
 
-                commands.spawn(CardBundle {
-                    sprite: SpriteBundle {
-                        texture: asset_server.load(image_name),
-                        transform: Transform::from_xyz(x + (j as f32) * PLAYER_CARDS_SPACING, y, j as f32).with_scale(PLAYER_CARD_SCALE),
-                        ..default()
+                commands.spawn((
+                    CardBundle {
+                        sprite: SpriteBundle {
+                            texture: asset_server.load(image_name),
+                            transform: Transform::from_xyz(x + (j as f32) * PLAYER_CARDS_SPACING, y, j as f32).with_scale(PLAYER_CARD_SCALE),
+                            ..default()
+                        },
+                        id: Id(card.id),
                     },
-                    id: Id(card.id),
-                });
+                    GameItem
+                ));
 
             }
             // Spawn a player and give him a MainPlayer component to access him directly without
@@ -261,17 +275,23 @@ fn setup(
             commands.spawn((PlayerName::MainPlayer,
                 Player { pos: Vec3::new(x, y, 0.0), cards: player_hand },
                 MainPlayer,
+                GameItem,
             ));
         }
 
         // Text of a Player's name on top of a hand
-        commands.spawn(Text2dBundle {
-            text: Text::from_section(format!("Player {}", i + 1), TextStyle { font: font.clone(), font_size: 50.0, color: Color::WHITE }),
-            transform: Transform::from_xyz(x - NAME_TEXT_OFFSET_X, y - NAME_TEXT_OFFSET_Y, 0.0),
-            ..default()
-        });
+        commands.spawn((
+            Text2dBundle {
+                text: Text::from_section(format!("Player {}", i + 1), TextStyle { font: font.clone(), font_size: 50.0, color: Color::WHITE }),
+                transform: Transform::from_xyz(x - NAME_TEXT_OFFSET_X, y - NAME_TEXT_OFFSET_Y, 0.0),
+                ..default()
+            },
+            GameItem,
+        ));
 
     }
+
+    /************ Create discard pile *************/
 
     // TODO threow back to menu if not enough cards in deck to deal for everyone
     // Put a card from a deck to a discard pile
@@ -285,7 +305,10 @@ fn setup(
             transform: Transform::from_xyz(DECK_DISCARD_DISTANCE, 0.0, 0.0).with_scale(DISCARD_CARD_SCALE),
             ..default()
         },
+        GameItem,
     ));
+
+    /************ Create a deck *************/
 
     // Spawn a deck and put unused cards there
     commands.spawn((
@@ -294,7 +317,8 @@ fn setup(
             texture: tex_back,
             transform: Transform::from_xyz(-DECK_DISCARD_DISTANCE, 0.0, 0.0).with_scale(DECK_CARD_SCALE),
             ..default()
-        }
+        },
+        GameItem,
     ));
 }
 
@@ -318,8 +342,7 @@ fn check_deck_bounds(
     // If yes - transform cursor's position from global position to 2D world position
     if let Some(cursor_pos) = window.cursor_position().and_then(|cursor| camera.viewport_to_world_2d(camera_pos, cursor))
     {
-
-        /*********Check if clicked on a deck*********/
+        /********* Check if clicked on a deck *********/
 
         let deck_image = deck_q.single();
         // If deck's image was properly loaded - find it using a deck's image handle
@@ -399,14 +422,17 @@ fn draw_card(
             // Load and spawn an image with a new new card
             let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
 
-            commands.spawn(CardBundle {
-                sprite: SpriteBundle {
-                    texture: asset_server.load(image_name),
-                    transform: Transform::from_xyz(player.pos.x + PLAYER_CARDS_SPACING * num_cards as f32, player.pos.y, num_cards as f32).with_scale(PLAYER_CARD_SCALE),
-                    ..default()
+            commands.spawn((
+                CardBundle {
+                    sprite: SpriteBundle {
+                        texture: asset_server.load(image_name),
+                        transform: Transform::from_xyz(player.pos.x + PLAYER_CARDS_SPACING * num_cards as f32, player.pos.y, num_cards as f32).with_scale(PLAYER_CARD_SCALE),
+                        ..default()
+                    },
+                    id: Id(card.id),
                 },
-                id: Id(card.id),
-            });
+                GameItem,
+            ));
 
             player.cards.push(card);
         }
@@ -420,10 +446,9 @@ fn draw_card(
 fn play_card(
     mut commands: Commands,
     mut play_event: EventReader<PlayCard>,
-    mut discard_q: Query<(&mut Handle<Image>, &mut DiscardPile)>,
+    mut discard_q: Query<(&mut Handle<Image>, &mut DiscardPile), Without<Deck>>,
     mut player_q: Query<&mut Player, With<MainPlayer>>,
     mut cards_image_q: Query<(Entity, &Handle<Image>, &mut Transform, &Id), (Without<DiscardPile>, Without<Deck>)>,
-    // asset_server: Res<AssetServer>,
 ) {
     for event in play_event.iter()
     {
@@ -467,7 +492,8 @@ fn menu(
     mut next_state: ResMut<NextState<GameState>>,
     key: Res<Input<KeyCode>>,
 ) {
-    if key.just_pressed(KeyCode::Escape) {
+    if key.just_pressed(KeyCode::Escape)
+    {
         info!("Going to menu...");
         next_state.set(GameState::Menu);
     }
@@ -531,7 +557,7 @@ fn get_card_index(left: f32, x: f32, counter: usize) -> usize {
     counter - 1
 }
 
-// Allows to format an enum into sting
+// Allows to format an enum into string
 impl fmt::Display for Rank {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
