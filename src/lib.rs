@@ -6,9 +6,6 @@ use crate::menu::MenuPlugin;
 use crate::game::GamePlugin;
 
 use bevy::prelude::*;
-use bevy::app::App;
-
-pub const LOBBY_PLAYERS: usize = 5;
 
 #[derive(Clone, Copy, Default, Eq, PartialEq, Debug, Hash, States)]
 enum GameState {
@@ -25,10 +22,11 @@ enum DisplayQuality {
     High,
 }
 
-// One of the two settings that can be set through the menu. It will be a resource in the app
 #[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
-struct Volume(u32);
+struct StackableCards(bool);
 
+#[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
+struct NumberPlayers(usize);
 
 #[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
 struct Rules
@@ -49,7 +47,8 @@ impl Plugin for MainPlugin
                 stackable_cards: false,
             })
             .insert_resource(DisplayQuality::Medium)
-            .insert_resource(Volume(9))
+            .insert_resource(StackableCards(false))
+            .insert_resource(NumberPlayers(5))
             .add_startup_system(setup)
             .add_plugin(MenuPlugin)
             .add_plugin(GamePlugin);

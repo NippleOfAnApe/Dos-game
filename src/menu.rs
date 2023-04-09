@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::{despawn_screen, GameState, DisplayQuality, Volume};
+use crate::{despawn_screen, GameState, DisplayQuality, NumberPlayers, StackableCards};
 
 const TEXT_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
 
@@ -43,10 +43,16 @@ enum MenuButtonAction {
     BackToMainMenu,
 }
 
-// This plugin manages the menu, with 5 different screens:
-// - a main menu with "New Game", "Settings", "Quit"
-// - a settings menu with two submenus and a back button
-// - two settings screen with a setting that can be set and a back button
+#[derive(Component)]
+enum PlayerNumberAction
+{
+    Decrease,
+    Increase,
+}
+
+#[derive(Component)]
+struct PlayersNumberText;
+
 pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
@@ -57,7 +63,6 @@ impl Plugin for MenuPlugin {
             // Current screen in the menu is handled by an independent state from `GameState`
             .add_state::<MenuState>()
             .add_system(menu_setup.in_schedule(OnEnter(GameState::Menu)))
-            .add_system(ui_example.in_set(OnUpdate(GameState::Menu)))
             // Systems to handle the main menu screen
             .add_systems((
                 main_menu_setup.in_schedule(OnEnter(MenuState::Main)),
@@ -72,14 +77,19 @@ impl Plugin for MenuPlugin {
             // Systems to handle the sound settings screen
             .add_systems((
                 rules_settings_menu_setup.in_schedule(OnEnter(MenuState::SettingsRules)),
-                setting_button::<Volume>.in_set(OnUpdate(MenuState::SettingsRules)),
+                stackable_cards_button.in_set(OnUpdate(MenuState::SettingsRules)),
+                player_number_button.in_set(OnUpdate(MenuState::SettingsRules)),
                 despawn_screen::<OnRulesSettings>.in_schedule(OnExit(MenuState::SettingsRules)),
             ))
             // Common systems to all screens that handles buttons behaviour
-            .add_systems((menu_action, button_system).in_set(OnUpdate(GameState::Menu)));
+            .add_systems((menu_action, button_system, test).in_set(OnUpdate(GameState::Menu)));
     }
 }
 
+
+fn menu_setup(mut menu_state: ResMut<NextState<MenuState>>) {
+    menu_state.set(MenuState::Main);
+}
 
 // This system handles changing all buttons color based on mouse interaction
 fn button_system(
@@ -106,8 +116,10 @@ fn setting_button<T: Resource + Component + PartialEq + Copy>(
     mut commands: Commands,
     mut setting: ResMut<T>,
 ) {
-    for (interaction, button_setting, entity) in &interaction_query {
-        if *interaction == Interaction::Clicked && *setting != *button_setting {
+    for (interaction, button_setting, entity) in &interaction_query
+    {
+        if *interaction == Interaction::Clicked && *setting != *button_setting
+        {
             let (previous_button, mut previous_color) = selected_query.single_mut();
             *previous_color = NORMAL_BUTTON.into();
             commands.entity(previous_button).remove::<SelectedOption>();
@@ -117,11 +129,49 @@ fn setting_button<T: Resource + Component + PartialEq + Copy>(
     }
 }
 
-fn menu_setup(mut menu_state: ResMut<NextState<MenuState>>) {
-    menu_state.set(MenuState::Main);
+fn stackable_cards_button(
+    mut interaction_query: Query<(&Interaction, &mut StackableCards, Entity), (Changed<Interaction>, With<Button>)>,
+    mut commands: Commands,
+    mut setting: ResMut<StackableCards>,
+) {
+    for (interaction, mut stackable_button, entity) in interaction_query.iter_mut()
+    {
+        if *interaction == Interaction::Clicked
+        {
+            stackable_button.0 = !stackable_button.0;
+            if stackable_button.0 { commands.entity(entity).insert(SelectedOption); }
+            else { commands.entity(entity).remove::<SelectedOption>(); }
+            *setting = *stackable_button;
+        }
+    }
 }
 
-fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn player_number_button(
+    interaction_query: Query<(&Interaction, &PlayerNumberAction), (Changed<Interaction>, With<Button>)>,
+    mut num_players: ResMut<NumberPlayers>,
+    mut text_q: Query<&mut Text, With<PlayersNumberText>>,
+) {
+    for (interaction, button_action) in &interaction_query
+    {
+        let mut text_number = text_q.single_mut();
+        if *interaction == Interaction::Clicked
+        {
+            match button_action {
+                PlayerNumberAction::Decrease => {
+                    if num_players.0 > 1 { num_players.0 -= 1; } else { num_players.0 = 1 }
+                    text_number.sections[0].value = format!("{}", num_players.0)
+                },
+                PlayerNumberAction::Increase => {
+                    num_players.0 += 1;
+                    text_number.sections[0].value = format!("{}", num_players.0)
+                },
+            }
+        }
+    }
+}
+
+fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>)
+{
     let font = asset_server.load("fonts/Vividly.otf");
     // Common style for all buttons on the screen
     let button_style = Style {
@@ -162,7 +212,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     ..default()
                 })
                 .with_children(|parent| {
-                    // Display the game name
+                    // Game name
                     parent.spawn(
                         TextBundle::from_section(
                             "Dos",
@@ -177,11 +227,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                             ..default()
                         }),
                     );
-
-                    // Display three buttons for each action available from the main menu:
-                    // - play
-                    // - display
-                    // - sound
+                    // Play
                     parent
                         .spawn((
                             ButtonBundle {
@@ -197,6 +243,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 button_text_style.clone(),
                             ));
                         });
+                    // Display
                     parent
                         .spawn((
                             ButtonBundle {
@@ -212,6 +259,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 button_text_style.clone(),
                             ));
                         });
+                    // Rules
                     parent
                         .spawn((
                             ButtonBundle {
@@ -336,7 +384,8 @@ fn display_settings_menu_setup(
 fn rules_settings_menu_setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    volume: Res<Volume>,
+    stackable: Res<StackableCards>,
+    num_players: Res<NumberPlayers>,
 ) {
     let button_style = Style {
         size: Size::new(Val::Px(200.0), Val::Px(65.0)),
@@ -376,6 +425,7 @@ fn rules_settings_menu_setup(
                     ..default()
                 })
                 .with_children(|parent| {
+                    // Stackable cards
                     parent
                         .spawn(NodeBundle {
                             style: Style {
@@ -387,24 +437,74 @@ fn rules_settings_menu_setup(
                         })
                         .with_children(|parent| {
                             parent.spawn(TextBundle::from_section(
-                                "Volume",
+                                "Stackable cards",
                                 button_text_style.clone(),
                             ));
-                            for volume_setting in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] {
-                                let mut entity = parent.spawn(ButtonBundle {
-                                    style: Style {
-                                        size: Size::new(Val::Px(40.0), Val::Px(40.0)),
-                                        ..button_style.clone()
-                                    },
-                                    background_color: NORMAL_BUTTON.into(),
-                                    ..default()
-                                });
-                                entity.insert(Volume(volume_setting));
-                                if *volume == Volume(volume_setting) {
-                                    entity.insert(SelectedOption);
-                                }
-                            }
+                            let mut entity = parent.spawn(ButtonBundle {
+                                style: Style {
+                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                    ..button_style.clone()
+                                },
+                                background_color: NORMAL_BUTTON.into(),
+                                ..default()
+                            });
+                            entity.insert(StackableCards(stackable.0));
+                            if stackable.0 {entity.insert(SelectedOption);}
+
                         });
+                    // Number of Players
+                    parent
+                        .spawn(NodeBundle {
+                            style: Style {
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: Color::DARK_GREEN.into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            parent.spawn(TextBundle::from_section(
+                                "Players: ",
+                                button_text_style.clone(),
+                            ));
+                            parent.spawn(ButtonBundle {
+                                style: Style {
+                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                    ..button_style.clone()
+                                },
+                                background_color: NORMAL_BUTTON.into(),
+                                ..default()
+                            }).insert(PlayerNumberAction::Decrease).with_children(|parent| {
+                                parent.spawn(TextBundle::from_section(
+                                    "-",
+                                    TextStyle {
+                                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                                        ..button_text_style.clone()
+                                    }
+                                ));
+                            });
+                            parent.spawn((TextBundle::from_section(
+                                format!("{}", num_players.0),
+                                button_text_style.clone(),
+                            ), PlayersNumberText));
+                            parent.spawn(ButtonBundle {
+                                style: Style {
+                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                    ..button_style.clone()
+                                },
+                                background_color: NORMAL_BUTTON.into(),
+                                ..default()
+                            }).insert(PlayerNumberAction::Increase).with_children(|parent| {
+                                parent.spawn(TextBundle::from_section(
+                                    "+",
+                                    TextStyle {
+                                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                                        ..button_text_style.clone()
+                                    }
+                                ));
+                            });
+                        });
+                    // Back to menu
                     parent
                         .spawn((
                             ButtonBundle {
@@ -422,24 +522,40 @@ fn rules_settings_menu_setup(
 }
 
 fn menu_action(
-    interaction_query: Query<
-        (&Interaction, &MenuButtonAction),
-        (Changed<Interaction>, With<Button>),
-    >,
+    interaction_query: Query<(&Interaction, &MenuButtonAction), (Changed<Interaction>, With<Button>)>,
     mut menu_state: ResMut<NextState<MenuState>>,
     mut game_state: ResMut<NextState<GameState>>,
 ) {
-    for (interaction, menu_button_action) in &interaction_query {
-        if *interaction == Interaction::Clicked {
-            match menu_button_action {
+    for (interaction, menu_button_action) in &interaction_query
+    {
+        if *interaction == Interaction::Clicked
+        {
+            match menu_button_action
+            {
                 MenuButtonAction::Play => {
                     game_state.set(GameState::Game);
                     menu_state.set(MenuState::Disabled);
-                }
+                },
                 MenuButtonAction::SettingsDisplay => menu_state.set(MenuState::SettingsDisplay),
                 MenuButtonAction::SettingsRules => menu_state.set(MenuState::SettingsRules),
                 MenuButtonAction::BackToMainMenu => menu_state.set(MenuState::Main),
             }
         }
+    }
+}
+
+fn test(
+    key: Res<Input<KeyCode>>,
+    rules: Res<StackableCards>,
+    num_players: Res<NumberPlayers>,
+) {
+    if key.just_pressed(KeyCode::Q)
+    {
+        info!("{:?}", *rules);
+    }
+
+    if key.just_pressed(KeyCode::W)
+    {
+        info!("{:?}", *num_players);
     }
 }

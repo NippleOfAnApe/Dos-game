@@ -54,3 +54,4 @@ Deck Bundle
  ∟...
 
 ```
+_Menu font used inside a menu is [Vividly](https://www.dafont.com/vividly.font?fpp=200) by Tata_
