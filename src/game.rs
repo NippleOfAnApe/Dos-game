@@ -21,6 +21,7 @@ use num::FromPrimitive;         //access enum values via integer
 //  Game configurations
 //----------------------------------------------------------------------------------
 
+const NAME_TEXT_COLOR: Color = Color::rgb(0.6, 0.8, 0.9);
 const HAND_SIZE: usize = 7;
 const PLAYERS_DISTANCE: f32 = 380.0;
 
@@ -188,7 +189,7 @@ fn setup(
 
     let center = Vec3::ZERO;
     let angle: f32 = 360.0 / LOBBY_PLAYERS as f32;
-    let font = asset_server.load("FiraSans-Bold.ttf");
+    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
     let tex_back = asset_server.load("Back.png");
 
     // Automatically calculate the amount of possible combinations of card X color
@@ -282,7 +283,7 @@ fn setup(
         // Text of a Player's name on top of a hand
         commands.spawn((
             Text2dBundle {
-                text: Text::from_section(format!("Player {}", i + 1), TextStyle { font: font.clone(), font_size: 50.0, color: Color::WHITE }),
+                text: Text::from_section(format!("Player {}", i + 1), TextStyle { font: font.clone(), font_size: 50.0, color: NAME_TEXT_COLOR }),
                 transform: Transform::from_xyz(x - NAME_TEXT_OFFSET_X, y - NAME_TEXT_OFFSET_Y, 0.0),
                 ..default()
             },

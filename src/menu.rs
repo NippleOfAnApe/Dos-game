@@ -1,27 +1,19 @@
-use bevy::{app::AppExit, prelude::*};
-use crate::{despawn_screen, GameState};
+use bevy::prelude::*;
+use crate::{despawn_screen, GameState, DisplayQuality, Volume};
 
 const TEXT_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
 
-// One of the two settings that can be set through the menu. It will be a resource in the app
-#[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
-enum DisplayQuality {
-    Low,
-    Medium,
-    High,
-}
-
-// One of the two settings that can be set through the menu. It will be a resource in the app
-#[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
-struct Volume(u32);
+const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
+const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
+const HOVERED_PRESSED_BUTTON: Color = Color::rgb(0.25, 0.65, 0.25);
+const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
 
 // State used for the current menu screen
 #[derive(Clone, Copy, Default, Eq, PartialEq, Debug, Hash, States)]
 enum MenuState {
     Main,
-    Settings,
     SettingsDisplay,
-    SettingsSound,
+    SettingsRules,
     #[default]
     Disabled,
 }
@@ -30,22 +22,13 @@ enum MenuState {
 #[derive(Component)]
 struct OnMainMenuScreen;
 
-// Tag component used to tag entities added on the settings menu screen
-#[derive(Component)]
-struct OnSettingsMenuScreen;
-
 // Tag component used to tag entities added on the display settings menu screen
 #[derive(Component)]
-struct OnDisplaySettingsMenuScreen;
+struct OnDisplaySettings;
 
-// Tag component used to tag entities added on the sound settings menu screen
+// Tag component used to tag entities added on the rules settings menu screen
 #[derive(Component)]
-struct OnSoundSettingsMenuScreen;
-
-const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
-const HOVERED_PRESSED_BUTTON: Color = Color::rgb(0.25, 0.65, 0.25);
-const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
+struct OnRulesSettings;
 
 // Tag component used to mark which setting is currently selected
 #[derive(Component)]
@@ -55,12 +38,9 @@ struct SelectedOption;
 #[derive(Component)]
 enum MenuButtonAction {
     Play,
-    Settings,
     SettingsDisplay,
-    SettingsSound,
+    SettingsRules,
     BackToMainMenu,
-    BackToSettings,
-    Quit,
 }
 
 // This plugin manages the menu, with 5 different screens:
@@ -75,33 +55,25 @@ impl Plugin for MenuPlugin {
             // At start, the menu is not enabled. This will be changed in `menu_setup` when
             // entering the `GameState::Menu` state.
             // Current screen in the menu is handled by an independent state from `GameState`
-            .insert_resource(DisplayQuality::Medium)
-            .insert_resource(Volume(7))
             .add_state::<MenuState>()
             .add_system(menu_setup.in_schedule(OnEnter(GameState::Menu)))
+            .add_system(ui_example.in_set(OnUpdate(GameState::Menu)))
             // Systems to handle the main menu screen
             .add_systems((
                 main_menu_setup.in_schedule(OnEnter(MenuState::Main)),
                 despawn_screen::<OnMainMenuScreen>.in_schedule(OnExit(MenuState::Main)),
             ))
-            // Systems to handle the settings menu screen
-            .add_systems((
-                settings_menu_setup.in_schedule(OnEnter(MenuState::Settings)),
-                despawn_screen::<OnSettingsMenuScreen>.in_schedule(OnExit(MenuState::Settings)),
-            ))
             // Systems to handle the display settings screen
             .add_systems((
                 display_settings_menu_setup.in_schedule(OnEnter(MenuState::SettingsDisplay)),
                 setting_button::<DisplayQuality>.in_set(OnUpdate(MenuState::SettingsDisplay)),
-                despawn_screen::<OnDisplaySettingsMenuScreen>
-                    .in_schedule(OnExit(MenuState::SettingsDisplay)),
+                despawn_screen::<OnDisplaySettings>.in_schedule(OnExit(MenuState::SettingsDisplay)),
             ))
             // Systems to handle the sound settings screen
             .add_systems((
-                sound_settings_menu_setup.in_schedule(OnEnter(MenuState::SettingsSound)),
-                setting_button::<Volume>.in_set(OnUpdate(MenuState::SettingsSound)),
-                despawn_screen::<OnSoundSettingsMenuScreen>
-                    .in_schedule(OnExit(MenuState::SettingsSound)),
+                rules_settings_menu_setup.in_schedule(OnEnter(MenuState::SettingsRules)),
+                setting_button::<Volume>.in_set(OnUpdate(MenuState::SettingsRules)),
+                despawn_screen::<OnRulesSettings>.in_schedule(OnExit(MenuState::SettingsRules)),
             ))
             // Common systems to all screens that handles buttons behaviour
             .add_systems((menu_action, button_system).in_set(OnUpdate(GameState::Menu)));
@@ -150,7 +122,7 @@ fn menu_setup(mut menu_state: ResMut<NextState<MenuState>>) {
 }
 
 fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let font = asset_server.load("FiraSans-Bold.ttf");
+    let font = asset_server.load("fonts/Vividly.otf");
     // Common style for all buttons on the screen
     let button_style = Style {
         size: Size::new(Val::Px(250.0), Val::Px(65.0)),
@@ -186,30 +158,30 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: Color::CRIMSON.into(),
+                    background_color: Color::DARK_GREEN.into(),
                     ..default()
                 })
                 .with_children(|parent| {
                     // Display the game name
                     parent.spawn(
                         TextBundle::from_section(
-                            "Bevy Game Menu UI",
+                            "Dos",
                             TextStyle {
                                 font: font.clone(),
-                                font_size: 80.0,
-                                color: TEXT_COLOR,
+                                font_size: 100.0,
+                                color: Color::GOLD,
                             },
                         )
                         .with_style(Style {
-                            margin: UiRect::all(Val::Px(50.0)),
+                            margin: UiRect::all(Val::Px(100.0)),
                             ..default()
                         }),
                     );
 
                     // Display three buttons for each action available from the main menu:
-                    // - new game
-                    // - settings
-                    // - quit
+                    // - play
+                    // - display
+                    // - sound
                     parent
                         .spawn((
                             ButtonBundle {
@@ -221,7 +193,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         ))
                         .with_children(|parent| {
                             parent.spawn(TextBundle::from_section(
-                                "New Game",
+                                "Play",
                                 button_text_style.clone(),
                             ));
                         });
@@ -232,91 +204,29 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                                 background_color: NORMAL_BUTTON.into(),
                                 ..default()
                             },
-                            MenuButtonAction::Settings,
+                            MenuButtonAction::SettingsDisplay,
                         ))
                         .with_children(|parent| {
                             parent.spawn(TextBundle::from_section(
-                                "Settings",
+                                "Display",
                                 button_text_style.clone(),
                             ));
                         });
                     parent
                         .spawn((
                             ButtonBundle {
-                                style: button_style,
+                                style: button_style.clone(),
                                 background_color: NORMAL_BUTTON.into(),
                                 ..default()
                             },
-                            MenuButtonAction::Quit,
+                            MenuButtonAction::SettingsRules,
                         ))
                         .with_children(|parent| {
-                            parent.spawn(TextBundle::from_section("Quit", button_text_style));
+                            parent.spawn(TextBundle::from_section(
+                                "Rules",
+                                button_text_style.clone(),
+                            ));
                         });
-                });
-        });
-}
-
-fn settings_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let button_style = Style {
-        size: Size::new(Val::Px(200.0), Val::Px(65.0)),
-        margin: UiRect::all(Val::Px(20.0)),
-        justify_content: JustifyContent::Center,
-        align_items: AlignItems::Center,
-        ..default()
-    };
-
-    let button_text_style = TextStyle {
-        font: asset_server.load("FiraSans-Bold.ttf"),
-        font_size: 40.0,
-        color: TEXT_COLOR,
-    };
-
-    commands
-        .spawn((
-            NodeBundle {
-                style: Style {
-                    size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                },
-                ..default()
-            },
-            OnSettingsMenuScreen,
-        ))
-        .with_children(|parent| {
-            parent
-                .spawn(NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    background_color: Color::CRIMSON.into(),
-                    ..default()
-                })
-                .with_children(|parent| {
-                    for (action, text) in [
-                        (MenuButtonAction::SettingsDisplay, "Display"),
-                        (MenuButtonAction::SettingsSound, "Sound"),
-                        (MenuButtonAction::BackToMainMenu, "Back"),
-                    ] {
-                        parent
-                            .spawn((
-                                ButtonBundle {
-                                    style: button_style.clone(),
-                                    background_color: NORMAL_BUTTON.into(),
-                                    ..default()
-                                },
-                                action,
-                            ))
-                            .with_children(|parent| {
-                                parent.spawn(TextBundle::from_section(
-                                    text,
-                                    button_text_style.clone(),
-                                ));
-                            });
-                    }
                 });
         });
 }
@@ -334,7 +244,7 @@ fn display_settings_menu_setup(
         ..default()
     };
     let button_text_style = TextStyle {
-        font: asset_server.load("FiraSans-Bold.ttf"),
+        font: asset_server.load("fonts/Vividly.otf"),
         font_size: 40.0,
         color: TEXT_COLOR,
     };
@@ -350,7 +260,7 @@ fn display_settings_menu_setup(
                 },
                 ..default()
             },
-            OnDisplaySettingsMenuScreen,
+            OnDisplaySettings,
         ))
         .with_children(|parent| {
             parent
@@ -360,7 +270,7 @@ fn display_settings_menu_setup(
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: Color::CRIMSON.into(),
+                    background_color: Color::DARK_GREEN.into(),
                     ..default()
                 })
                 .with_children(|parent| {
@@ -372,7 +282,7 @@ fn display_settings_menu_setup(
                                 align_items: AlignItems::Center,
                                 ..default()
                             },
-                            background_color: Color::CRIMSON.into(),
+                            background_color: Color::DARK_GREEN.into(),
                             ..default()
                         })
                         .with_children(|parent| {
@@ -414,7 +324,7 @@ fn display_settings_menu_setup(
                                 background_color: NORMAL_BUTTON.into(),
                                 ..default()
                             },
-                            MenuButtonAction::BackToSettings,
+                            MenuButtonAction::BackToMainMenu,
                         ))
                         .with_children(|parent| {
                             parent.spawn(TextBundle::from_section("Back", button_text_style));
@@ -423,7 +333,7 @@ fn display_settings_menu_setup(
         });
 }
 
-fn sound_settings_menu_setup(
+fn rules_settings_menu_setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     volume: Res<Volume>,
@@ -436,7 +346,7 @@ fn sound_settings_menu_setup(
         ..default()
     };
     let button_text_style = TextStyle {
-        font: asset_server.load("FiraSans-Bold.ttf"),
+        font: asset_server.load("fonts/Vividly.otf"),
         font_size: 40.0,
         color: TEXT_COLOR,
     };
@@ -452,7 +362,7 @@ fn sound_settings_menu_setup(
                 },
                 ..default()
             },
-            OnSoundSettingsMenuScreen,
+            OnRulesSettings,
         ))
         .with_children(|parent| {
             parent
@@ -462,7 +372,7 @@ fn sound_settings_menu_setup(
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: Color::CRIMSON.into(),
+                    background_color: Color::DARK_GREEN.into(),
                     ..default()
                 })
                 .with_children(|parent| {
@@ -472,7 +382,7 @@ fn sound_settings_menu_setup(
                                 align_items: AlignItems::Center,
                                 ..default()
                             },
-                            background_color: Color::CRIMSON.into(),
+                            background_color: Color::DARK_GREEN.into(),
                             ..default()
                         })
                         .with_children(|parent| {
@@ -483,7 +393,7 @@ fn sound_settings_menu_setup(
                             for volume_setting in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] {
                                 let mut entity = parent.spawn(ButtonBundle {
                                     style: Style {
-                                        size: Size::new(Val::Px(30.0), Val::Px(65.0)),
+                                        size: Size::new(Val::Px(40.0), Val::Px(40.0)),
                                         ..button_style.clone()
                                     },
                                     background_color: NORMAL_BUTTON.into(),
@@ -502,7 +412,7 @@ fn sound_settings_menu_setup(
                                 background_color: NORMAL_BUTTON.into(),
                                 ..default()
                             },
-                            MenuButtonAction::BackToSettings,
+                            MenuButtonAction::BackToMainMenu,
                         ))
                         .with_children(|parent| {
                             parent.spawn(TextBundle::from_section("Back", button_text_style));
@@ -516,29 +426,19 @@ fn menu_action(
         (&Interaction, &MenuButtonAction),
         (Changed<Interaction>, With<Button>),
     >,
-    mut app_exit_events: EventWriter<AppExit>,
     mut menu_state: ResMut<NextState<MenuState>>,
     mut game_state: ResMut<NextState<GameState>>,
 ) {
     for (interaction, menu_button_action) in &interaction_query {
         if *interaction == Interaction::Clicked {
             match menu_button_action {
-                MenuButtonAction::Quit => app_exit_events.send(AppExit),
                 MenuButtonAction::Play => {
                     game_state.set(GameState::Game);
                     menu_state.set(MenuState::Disabled);
                 }
-                MenuButtonAction::Settings => menu_state.set(MenuState::Settings),
-                MenuButtonAction::SettingsDisplay => {
-                    menu_state.set(MenuState::SettingsDisplay);
-                }
-                MenuButtonAction::SettingsSound => {
-                    menu_state.set(MenuState::SettingsSound);
-                }
+                MenuButtonAction::SettingsDisplay => menu_state.set(MenuState::SettingsDisplay),
+                MenuButtonAction::SettingsRules => menu_state.set(MenuState::SettingsRules),
                 MenuButtonAction::BackToMainMenu => menu_state.set(MenuState::Main),
-                MenuButtonAction::BackToSettings => {
-                    menu_state.set(MenuState::Settings);
-                }
             }
         }
     }

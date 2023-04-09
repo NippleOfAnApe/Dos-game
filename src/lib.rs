@@ -17,8 +17,21 @@ enum GameState {
     Game,
 }
 
+// One of the two settings that can be set through the menu. It will be a resource in the app
 #[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
-struct Settings
+enum DisplayQuality {
+    Low,
+    Medium,
+    High,
+}
+
+// One of the two settings that can be set through the menu. It will be a resource in the app
+#[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
+struct Volume(u32);
+
+
+#[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
+struct Rules
 {
     players: u8,
     stackable_cards: bool,
@@ -31,10 +44,12 @@ impl Plugin for MainPlugin
     fn build(&self, app: &mut App)
     {
         app.add_state::<GameState>()
-            .insert_resource(Settings {
+            .insert_resource(Rules {
                 players: 5,
                 stackable_cards: false,
             })
+            .insert_resource(DisplayQuality::Medium)
+            .insert_resource(Volume(9))
             .add_startup_system(setup)
             .add_plugin(MenuPlugin)
             .add_plugin(GamePlugin);
