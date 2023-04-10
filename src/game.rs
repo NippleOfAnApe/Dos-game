@@ -39,7 +39,7 @@ const NAME_TEXT_OFFSET_X: f32 = -50.0;
 const NAME_TEXT_OFFSET_Y: f32 = 150.0;
 
 
-#[derive(Clone, Copy, Debug, FromPrimitive)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, FromPrimitive)]
 enum Rank
 {
     Zero,
@@ -59,7 +59,7 @@ enum Rank
     // WildDraw4
 }
 
-#[derive(Clone, Copy, Debug, FromPrimitive)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, FromPrimitive)]
 enum Suit
 {
     Red,
@@ -84,7 +84,6 @@ struct Card
 enum PlayerName
 {
     MainPlayer,
-    Player1,
     Player2,
     Player3,
     Player4,
@@ -93,6 +92,9 @@ enum PlayerName
     Player7,
     Player8,
     Player9,
+    Player10,
+    Player11,
+    Player12,
     Void,
 }
 
@@ -138,9 +140,8 @@ struct GameItem;
 //----------------------------------------------------------------------------------
 
 #[derive(Resource)]
-struct GameRules
+struct GameplayState
 {
-    move_made: bool,
     player_turn: PlayerName,
 }
 
@@ -148,6 +149,11 @@ struct PlayCard(usize);
 
 #[derive(Default)]
 struct DrawCard;
+
+#[derive(Resource)]
+struct BotWaiting {
+    event_timer: Timer,
+}
 
 //----------------------------------------------------------------------------------
 //  Plugin
@@ -159,21 +165,17 @@ impl Plugin for GamePlugin
 {
     fn build(&self, app: &mut App)
     {
-        app.insert_resource(GameRules {
-                move_made: false,
-                    player_turn: PlayerName::MainPlayer,
-                })
-            .add_event::<DrawCard>()
+        app.add_event::<DrawCard>()
             .add_event::<PlayCard>()
+            .init_resource::<BotWaiting>()
             .add_system(setup.in_schedule(OnEnter(GameState::Game)))
-            .add_system(menu.in_set(OnUpdate(GameState::Game)))
+            .add_systems((menu, bot_play, test).in_set(OnUpdate(GameState::Game)))
             .add_system(check_deck_bounds.run_if(mouse_pressed).in_set(OnUpdate(GameState::Game)))
             // EventWriter goes before EventReader
             .add_system(draw_card.after(check_deck_bounds).in_set(OnUpdate(GameState::Game)))
             .add_system(play_card.after(check_deck_bounds).in_set(OnUpdate(GameState::Game)))
             // TODO it doesnt remove entities without transform
-            .add_system(despawn_screen::<GameItem>.in_schedule(OnExit(GameState::Game)))
-            .add_system(test);
+            .add_system(despawn_screen::<GameItem>.in_schedule(OnExit(GameState::Game)));
     }
 }
 
@@ -216,6 +218,7 @@ fn setup(
         }
     }
     new_deck.shuffle(&mut thread_rng());
+    commands.insert_resource(GameplayState { player_turn: PlayerName::MainPlayer });
 
     /********* Create players *********/
 
@@ -336,7 +339,10 @@ fn check_deck_bounds(
     all_images: Res<Assets<Image>>,
     mut deck_event: EventWriter<DrawCard>,
     mut card_event: EventWriter<PlayCard>,
+    gameplay_rules: Res<GameplayState>,
 ) {
+    if gameplay_rules.player_turn != PlayerName::MainPlayer { return; }
+
     let window = window_q.single();
     let (camera, camera_pos) = camera_q.single();
 
@@ -451,11 +457,17 @@ fn play_card(
     mut discard_q: Query<(&mut Handle<Image>, &mut DiscardPile), Without<Deck>>,
     mut player_q: Query<&mut Player, With<MainPlayer>>,
     mut cards_image_q: Query<(Entity, &Handle<Image>, &mut Transform, &Id), (Without<DiscardPile>, Without<Deck>)>,
+    mut gameplay: ResMut<GameplayState>,
+    rules: Res<Rules>,
 ) {
     for event in play_event.iter()
     {
         let (mut discard_image, mut pile) = discard_q.single_mut();
         let mut player = player_q.single_mut();
+
+        if pile.cards.last().unwrap().rank != player.cards[event.0].rank &&
+            pile.cards.last().unwrap().suite != player.cards[event.0].suite { return; }
+
         let card = player.cards.remove(event.0);
         let cards_len = player.cards.len();
 
@@ -487,6 +499,59 @@ fn play_card(
 
         // Add a played card to discard pile
         pile.cards.push(card);
+        
+        // In case only 1 player in a lobby, don't pass a turn
+        // TODO stackable cards logic
+        if rules.num_players == 1 || rules.stackable_cards { return; }
+
+        if !rules.clockwise
+        {
+            gameplay.player_turn = PlayerName::from_usize(1).unwrap();
+        }
+        else
+        {
+            gameplay.player_turn = PlayerName::from_usize(rules.num_players - 1).unwrap();
+        }
+    }
+}
+
+fn bot_play(
+    mut commands: Commands,
+    mut discard_q: Query<(&mut Handle<Image>, &mut DiscardPile)>,
+    mut players_q: Query<(&mut Player, &PlayerName), Without<MainPlayer>>,
+    cards_image_q: Query<(Entity, &Id), (Without<DiscardPile>, Without<Deck>)>,
+    time: Res<Time>,
+    rules: Res<Rules>,
+    mut state: ResMut<BotWaiting>,
+    mut game_rules: ResMut<GameplayState>,
+    asset_server: Res<AssetServer>,
+) {
+    if game_rules.player_turn == PlayerName::MainPlayer { return; }
+
+    if state.event_timer.tick(time.delta()).finished()
+    {
+        let (mut discard_image, mut pile) = discard_q.single_mut();
+        'players: for (mut player, name) in players_q.iter_mut()
+        {
+            if game_rules.player_turn != *name { continue 'players; }
+
+            let card = player.cards.pop().unwrap();
+            let image_name = format!("{}_{}.png", card.suite.to_string(), card.rank.to_string());
+
+            'cards: for (entity, id) in &cards_image_q
+            {
+                if card.id != id.0 { continue 'cards; }
+
+                *discard_image = asset_server.load(image_name);
+                commands.entity(entity).despawn();
+                pile.cards.push(card);
+                break 'players;
+            }
+        }
+
+        let index = game_rules.player_turn as usize;
+        let index = if rules.clockwise { index - 1 } else { (index + 1) % rules.num_players };
+        game_rules.player_turn = PlayerName::from_usize(index).unwrap();
     }
 }
 
@@ -496,7 +561,6 @@ fn menu(
 ) {
     if key.just_pressed(KeyCode::Escape)
     {
-        info!("Going to menu...");
         next_state.set(GameState::Menu);
     }
 }
@@ -508,8 +572,9 @@ fn mouse_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool
 
 fn test(
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    mut game_rules: ResMut<GameRules>,
+    mut game_rules: ResMut<GameplayState>,
     mut player_q: Query<&mut Player, With<MainPlayer>>,
+    discard_pile_q: Query<&DiscardPile>,
     deck_q: Query<&Deck>,
     id_q: Query<&Id>,
     key: Res<Input<KeyCode>>,
@@ -525,8 +590,7 @@ fn test(
     }
 
     if key.just_pressed(KeyCode::T) {
-        info!("Physical cursor position: {}", window.physical_cursor_position().unwrap());
-        info!("Cursor position: {}", window.cursor_position().unwrap());
+        info!("{:?}", game_rules.player_turn);
     }
 
     if key.just_pressed(KeyCode::R) {
@@ -537,12 +601,11 @@ fn test(
 
 
     if key.just_pressed(KeyCode::Space) {
-        for id in &id_q
+        let pile = discard_pile_q.single();
+        if let Some(last_card) = pile.cards.last()
         {
-            info!("Id: {}", id.0);
+            info!("{:?}", last_card);
         }
-
-        // player.cards[0].pos.y += 20.0;
     }
 }
 
@@ -571,3 +634,12 @@ impl fmt::Display for Suit {
         fmt::Debug::fmt(self, f)
     }
 }
+
+impl Default for BotWaiting {
+    fn default() -> Self {
+        BotWaiting {
+            event_timer: Timer::from_seconds(2.0, TimerMode::Repeating),
+        }
+    }
+}
+

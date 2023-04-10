@@ -27,6 +27,9 @@ struct Rules
 {
     num_players: usize,
     stackable_cards: bool,
+    turbo: bool,
+    clockwise: bool,
+    no_skip: bool,
 }
 
 pub struct MainPlugin;
@@ -39,6 +42,9 @@ impl Plugin for MainPlugin
             .insert_resource(Rules {
                 num_players: 5,
                 stackable_cards: false,
+                turbo: false,
+                clockwise: false,
+                no_skip: false,
             })
             .insert_resource(DisplayQuality::Medium)
             .add_startup_system(setup)
