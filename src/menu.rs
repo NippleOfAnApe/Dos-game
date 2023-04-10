@@ -43,12 +43,15 @@ enum MenuButtonAction {
     BackToMainMenu,
 }
 
-#[derive(Component)]
+#[derive(Component, PartialEq, Eq)]
 enum RulesButtonAction
 {
     DecreasePlayers,
     IncreasePlayers,
     ToggleStackable,
+    ToggleTurbo,
+    ToggleClockwise,
+    ToggleNoSkip,
 }
 
 #[derive(Component)]
@@ -154,7 +157,27 @@ fn rules_button_action(
                     if rules.stackable_cards { commands.entity(entity).insert(SelectedOption); }
                     else { commands.entity(entity).remove::<SelectedOption>(); }
                 }
+                RulesButtonAction::ToggleTurbo => {
+                    rules.turbo = !rules.turbo;
+                    if rules.turbo { commands.entity(entity).insert(SelectedOption); }
+                    else { commands.entity(entity).remove::<SelectedOption>(); }
+                }
+                RulesButtonAction::ToggleClockwise => {
+                    rules.clockwise = !rules.clockwise;
+                    if rules.clockwise { commands.entity(entity).insert(SelectedOption); }
+                    else { commands.entity(entity).remove::<SelectedOption>(); }
+                }
+                RulesButtonAction::ToggleNoSkip => {
+                    rules.no_skip = !rules.no_skip;
+                    if rules.no_skip { commands.entity(entity).insert(SelectedOption); }
+                    else { commands.entity(entity).remove::<SelectedOption>(); }
+                }
             }
+        }
+
+        if *interaction == Interaction::Hovered && *button_action == RulesButtonAction::ToggleTurbo
+        {
+            println!("turbo hovered");
         }
     }
 }
@@ -413,6 +436,32 @@ fn rules_settings_menu_setup(
                     ..default()
                 })
                 .with_children(|parent| {
+                    // Clockwise
+                    parent
+                        .spawn(NodeBundle {
+                            style: Style {
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: Color::DARK_GREEN.into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            parent.spawn(TextBundle::from_section(
+                                "Clockwise",
+                                button_text_style.clone(),
+                            ));
+                            let mut entity = parent.spawn(ButtonBundle {
+                                style: Style {
+                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                    ..button_style.clone()
+                                },
+                                background_color: NORMAL_BUTTON.into(),
+                                ..default()
+                            });
+                            entity.insert(RulesButtonAction::ToggleClockwise);
+                            if rules.clockwise {entity.insert(SelectedOption);}
+                        });
                     // Stackable cards
                     parent
                         .spawn(NodeBundle {
@@ -438,7 +487,58 @@ fn rules_settings_menu_setup(
                             });
                             entity.insert(RulesButtonAction::ToggleStackable);
                             if rules.stackable_cards {entity.insert(SelectedOption);}
-
+                        });
+                    // Turbo mode
+                    parent
+                        .spawn(NodeBundle {
+                            style: Style {
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: Color::DARK_GREEN.into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            parent.spawn(TextBundle::from_section(
+                                "Turbo",
+                                button_text_style.clone(),
+                            ));
+                            let mut entity = parent.spawn(ButtonBundle {
+                                style: Style {
+                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                    ..button_style.clone()
+                                },
+                                background_color: NORMAL_BUTTON.into(),
+                                ..default()
+                            });
+                            entity.insert(RulesButtonAction::ToggleTurbo);
+                            if rules.stackable_cards {entity.insert(SelectedOption);}
+                        });
+                    // Draw until can play
+                    parent
+                        .spawn(NodeBundle {
+                            style: Style {
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: Color::DARK_GREEN.into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            parent.spawn(TextBundle::from_section(
+                                "No skip",
+                                button_text_style.clone(),
+                            ));
+                            let mut entity = parent.spawn(ButtonBundle {
+                                style: Style {
+                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                    ..button_style.clone()
+                                },
+                                background_color: NORMAL_BUTTON.into(),
+                                ..default()
+                            });
+                            entity.insert(RulesButtonAction::ToggleNoSkip);
+                            if rules.no_skip {entity.insert(SelectedOption);}
                         });
                     // Number of Players
                     parent
