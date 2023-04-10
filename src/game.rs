@@ -12,7 +12,7 @@
 use std::fmt::{self, Debug};   // Conver enum variants into string
 use std::mem;               // Conver variants of enum into integer
 use bevy::prelude::*;
-use crate::{despawn_screen, GameState, NumberPlayers};
+use crate::{despawn_screen, GameState, Rules};
 use rand::{seq::SliceRandom, thread_rng};
 use num_derive::FromPrimitive;  //derive a trait on enum to access it with integer
 use num::FromPrimitive;         //access enum values via integer
@@ -184,12 +184,12 @@ impl Plugin for GamePlugin
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    num_players: Res<NumberPlayers>,
+    rules: Res<Rules>,
 ) {
     /********* Initialization *********/
 
     let center = Vec3::ZERO;
-    let angle: f32 = 360.0 / num_players.0 as f32;
+    let angle: f32 = 360.0 / rules.num_players as f32;
     let font = asset_server.load("fonts/FiraSans-Bold.ttf");
     let tex_back = asset_server.load("Back.png");
 
@@ -219,7 +219,7 @@ fn setup(
 
     /********* Create players *********/
 
-    for i in 0..num_players.0
+    for i in 0..rules.num_players
     {
         // Calculate X and Y position
         let theta = (-90. + i as f32 * angle).to_radians();

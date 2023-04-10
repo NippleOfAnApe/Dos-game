@@ -23,15 +23,9 @@ enum DisplayQuality {
 }
 
 #[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
-struct StackableCards(bool);
-
-#[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
-struct NumberPlayers(usize);
-
-#[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
 struct Rules
 {
-    players: u8,
+    num_players: usize,
     stackable_cards: bool,
 }
 
@@ -43,12 +37,10 @@ impl Plugin for MainPlugin
     {
         app.add_state::<GameState>()
             .insert_resource(Rules {
-                players: 5,
+                num_players: 5,
                 stackable_cards: false,
             })
             .insert_resource(DisplayQuality::Medium)
-            .insert_resource(StackableCards(false))
-            .insert_resource(NumberPlayers(5))
             .add_startup_system(setup)
             .add_plugin(MenuPlugin)
             .add_plugin(GamePlugin);

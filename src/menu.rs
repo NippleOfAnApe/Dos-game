@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::{despawn_screen, GameState, DisplayQuality, NumberPlayers, StackableCards};
+use crate::{despawn_screen, GameState, DisplayQuality, Rules};
 
 const TEXT_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
 
@@ -44,10 +44,11 @@ enum MenuButtonAction {
 }
 
 #[derive(Component)]
-enum PlayerNumberAction
+enum RulesButtonAction
 {
-    Decrease,
-    Increase,
+    DecreasePlayers,
+    IncreasePlayers,
+    ToggleStackable,
 }
 
 #[derive(Component)]
@@ -77,8 +78,7 @@ impl Plugin for MenuPlugin {
             // Systems to handle the sound settings screen
             .add_systems((
                 rules_settings_menu_setup.in_schedule(OnEnter(MenuState::SettingsRules)),
-                stackable_cards_button.in_set(OnUpdate(MenuState::SettingsRules)),
-                player_number_button.in_set(OnUpdate(MenuState::SettingsRules)),
+                rules_button_action.in_set(OnUpdate(MenuState::SettingsRules)),
                 despawn_screen::<OnRulesSettings>.in_schedule(OnExit(MenuState::SettingsRules)),
             ))
             // Common systems to all screens that handles buttons behaviour
@@ -129,42 +129,31 @@ fn setting_button<T: Resource + Component + PartialEq + Copy>(
     }
 }
 
-fn stackable_cards_button(
-    mut interaction_query: Query<(&Interaction, &mut StackableCards, Entity), (Changed<Interaction>, With<Button>)>,
-    mut commands: Commands,
-    mut setting: ResMut<StackableCards>,
-) {
-    for (interaction, mut stackable_button, entity) in interaction_query.iter_mut()
-    {
-        if *interaction == Interaction::Clicked
-        {
-            stackable_button.0 = !stackable_button.0;
-            if stackable_button.0 { commands.entity(entity).insert(SelectedOption); }
-            else { commands.entity(entity).remove::<SelectedOption>(); }
-            *setting = *stackable_button;
-        }
-    }
-}
-
-fn player_number_button(
-    interaction_query: Query<(&Interaction, &PlayerNumberAction), (Changed<Interaction>, With<Button>)>,
-    mut num_players: ResMut<NumberPlayers>,
+fn rules_button_action(
+    interaction_q: Query<(&Interaction, &RulesButtonAction, Entity), (Changed<Interaction>, With<Button>)>,
     mut text_q: Query<&mut Text, With<PlayersNumberText>>,
+    mut rules: ResMut<Rules>,
+    mut commands: Commands,
 ) {
-    for (interaction, button_action) in &interaction_query
+    for (interaction, button_action, entity) in &interaction_q
     {
         let mut text_number = text_q.single_mut();
         if *interaction == Interaction::Clicked
         {
             match button_action {
-                PlayerNumberAction::Decrease => {
-                    if num_players.0 > 1 { num_players.0 -= 1; } else { num_players.0 = 1 }
-                    text_number.sections[0].value = format!("{}", num_players.0)
+                RulesButtonAction::DecreasePlayers => {
+                    if rules.num_players > 1 { rules.num_players -= 1; } else { rules.num_players = 1 }
+                    text_number.sections[0].value = format!("{}", rules.num_players)
                 },
-                PlayerNumberAction::Increase => {
-                    num_players.0 += 1;
-                    text_number.sections[0].value = format!("{}", num_players.0)
+                RulesButtonAction::IncreasePlayers => {
+                    rules.num_players += 1;
+                    text_number.sections[0].value = format!("{}", rules.num_players)
                 },
+                RulesButtonAction::ToggleStackable => {
+                    rules.stackable_cards = !rules.stackable_cards;
+                    if rules.stackable_cards { commands.entity(entity).insert(SelectedOption); }
+                    else { commands.entity(entity).remove::<SelectedOption>(); }
+                }
             }
         }
     }
@@ -384,8 +373,7 @@ fn display_settings_menu_setup(
 fn rules_settings_menu_setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    stackable: Res<StackableCards>,
-    num_players: Res<NumberPlayers>,
+    rules: Res<Rules>,
 ) {
     let button_style = Style {
         size: Size::new(Val::Px(200.0), Val::Px(65.0)),
@@ -448,8 +436,8 @@ fn rules_settings_menu_setup(
                                 background_color: NORMAL_BUTTON.into(),
                                 ..default()
                             });
-                            entity.insert(StackableCards(stackable.0));
-                            if stackable.0 {entity.insert(SelectedOption);}
+                            entity.insert(RulesButtonAction::ToggleStackable);
+                            if rules.stackable_cards {entity.insert(SelectedOption);}
 
                         });
                     // Number of Players
@@ -474,7 +462,7 @@ fn rules_settings_menu_setup(
                                 },
                                 background_color: NORMAL_BUTTON.into(),
                                 ..default()
-                            }).insert(PlayerNumberAction::Decrease).with_children(|parent| {
+                            }).insert(RulesButtonAction::DecreasePlayers).with_children(|parent| {
                                 parent.spawn(TextBundle::from_section(
                                     "-",
                                     TextStyle {
@@ -484,7 +472,7 @@ fn rules_settings_menu_setup(
                                 ));
                             });
                             parent.spawn((TextBundle::from_section(
-                                format!("{}", num_players.0),
+                                format!("{}", rules.num_players),
                                 button_text_style.clone(),
                             ), PlayersNumberText));
                             parent.spawn(ButtonBundle {
@@ -494,7 +482,7 @@ fn rules_settings_menu_setup(
                                 },
                                 background_color: NORMAL_BUTTON.into(),
                                 ..default()
-                            }).insert(PlayerNumberAction::Increase).with_children(|parent| {
+                            }).insert(RulesButtonAction::IncreasePlayers).with_children(|parent| {
                                 parent.spawn(TextBundle::from_section(
                                     "+",
                                     TextStyle {
@@ -546,16 +534,10 @@ fn menu_action(
 
 fn test(
     key: Res<Input<KeyCode>>,
-    rules: Res<StackableCards>,
-    num_players: Res<NumberPlayers>,
+    rules: Res<Rules>,
 ) {
     if key.just_pressed(KeyCode::Q)
     {
         info!("{:?}", *rules);
-    }
-
-    if key.just_pressed(KeyCode::W)
-    {
-        info!("{:?}", *num_players);
     }
 }
