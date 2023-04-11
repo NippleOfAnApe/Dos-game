@@ -23,12 +23,15 @@ use num::FromPrimitive;         //access enum values via integer
 
 const NAME_TEXT_COLOR: Color = Color::rgb(0.6, 0.8, 0.9);
 const HAND_SIZE: usize = 7;
-const PLAYERS_DISTANCE: f32 = 380.0;
 
-const ENEMY_CARD_SCALE: Vec3 = Vec3::new(0.6, 0.6, 0.0);
-const PLAYER_CARD_SCALE: Vec3 = Vec3::new(0.8, 0.8, 0.0);
-const DECK_CARD_SCALE: Vec3 = Vec3::new(0.8, 0.8, 0.0);
-const DISCARD_CARD_SCALE: Vec3 = Vec3::new(1.0, 1.0, 0.0);
+const PLAYERS_WIDTH_DISTANCE: f32 = 500.0;
+const PLAYERS_HEIGHT_DISTANCE: f32 = 280.0;
+const PLAYRES_Y_OFFSET: f32 = 50.0;
+
+const ENEMY_CARD_SCALE: Vec3 = Vec3::new(0.5, 0.5, 0.0);
+const PLAYER_CARD_SCALE: Vec3 = Vec3::new(0.7, 0.7, 0.0);
+const DECK_CARD_SCALE: Vec3 = Vec3::new(0.7, 0.7, 0.0);
+const DISCARD_CARD_SCALE: Vec3 = Vec3::new(0.8, 0.8, 0.0);
 const PLAYER_CARDS_SPACING: f32 = 50.0;
 const ENEMY_CARDS_SPACING: f32 = 12.0;
 
@@ -36,7 +39,8 @@ const DECK_DISCARD_DISTANCE: f32 = 100.0;
 const FALLBACK_DECK_COLLIDER: Vec2 = Vec2::new(100.0, 150.0);
 
 const NAME_TEXT_OFFSET_X: f32 = -50.0;
-const NAME_TEXT_OFFSET_Y: f32 = 150.0;
+const NAME_TEXT_OFFSET_Y: f32 = 100.0;
+const NAME_TEXT_FONT_SIZE: f32 = 40.0;
 
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, FromPrimitive)]
@@ -81,7 +85,7 @@ struct Card
 //----------------------------------------------------------------------------------
 
 #[derive(Component, Debug, PartialEq, Eq, Clone, Copy, FromPrimitive)]
-enum PlayerName
+pub enum PlayerName
 {
     MainPlayer,
     Player2,
@@ -131,18 +135,19 @@ struct CardBundle
     sprite: SpriteBundle,
 }
 
-// Tag component used to tag entities added in game
+// Tag component used for all entities added in game GameState
 #[derive(Component)]
-struct GameItem;
+pub struct GameItem;
 
 //----------------------------------------------------------------------------------
 //  Resources and Events
 //----------------------------------------------------------------------------------
 
-#[derive(Resource)]
-struct GameplayState
+#[derive(Resource, Debug)]
+pub struct GameplayState
 {
-    player_turn: PlayerName,
+    pub player_turn: PlayerName,
+    pub player_drawn_card: bool,
 }
 
 struct PlayCard(usize);
@@ -151,7 +156,8 @@ struct PlayCard(usize);
 struct DrawCard;
 
 #[derive(Resource)]
-struct BotWaiting {
+struct BotWaiting
+{
     event_timer: Timer,
 }
 
@@ -169,12 +175,11 @@ impl Plugin for GamePlugin
             .add_event::<PlayCard>()
             .init_resource::<BotWaiting>()
             .add_system(setup.in_schedule(OnEnter(GameState::Game)))
-            .add_systems((menu, bot_play, test).in_set(OnUpdate(GameState::Game)))
+            .add_systems((bot_play, test).in_set(OnUpdate(GameState::Game)))
             .add_system(check_deck_bounds.run_if(mouse_pressed).in_set(OnUpdate(GameState::Game)))
             // EventWriter goes before EventReader
             .add_system(draw_card.after(check_deck_bounds).in_set(OnUpdate(GameState::Game)))
             .add_system(play_card.after(check_deck_bounds).in_set(OnUpdate(GameState::Game)))
-            // TODO it doesnt remove entities without transform
             .add_system(despawn_screen::<GameItem>.in_schedule(OnExit(GameState::Game)));
     }
 }
@@ -218,16 +223,19 @@ fn setup(
         }
     }
     new_deck.shuffle(&mut thread_rng());
-    commands.insert_resource(GameplayState { player_turn: PlayerName::MainPlayer });
+    commands.insert_resource(GameplayState {
+        player_turn: PlayerName::MainPlayer,
+        player_drawn_card: false,
+    });
 
     /********* Create players *********/
 
     for i in 0..rules.num_players
     {
         // Calculate X and Y position
-        let theta = (-90. + i as f32 * angle).to_radians();
-        let x = center.x + theta.cos() * PLAYERS_DISTANCE;
-        let y = center.y + theta.sin() * PLAYERS_DISTANCE;
+        let theta = (-90.0 + i as f32 * angle).to_radians();
+        let x = center.x + theta.cos() * PLAYERS_WIDTH_DISTANCE;
+        let y = center.y + PLAYRES_Y_OFFSET + theta.sin() * PLAYERS_HEIGHT_DISTANCE;
 
         // move cards from a deck to a player's hand
         let mut player_hand: Vec<Card> = new_deck.drain(..HAND_SIZE).collect();
@@ -252,6 +260,15 @@ fn setup(
             // Spawn a player and give him a name from enum of PlayerName
             commands.spawn((PlayerName::from_usize(i).unwrap(),
                 Player { pos: Vec3::new(x, y, 0.0), cards: player_hand },
+                GameItem,
+            ));
+            // Text of a Player's name on top of a hand
+            commands.spawn((
+                Text2dBundle {
+                    text: Text::from_section(format!("Player {}", i + 1), TextStyle { font: font.clone(), font_size: NAME_TEXT_FONT_SIZE, color: NAME_TEXT_COLOR }),
+                    transform: Transform::from_xyz(x - NAME_TEXT_OFFSET_X, y - NAME_TEXT_OFFSET_Y, 0.0),
+                    ..default()
+                },
                 GameItem,
             ));
         }
@@ -282,18 +299,16 @@ fn setup(
                 MainPlayer,
                 GameItem,
             ));
+            // Text of a Player's name on top of a hand
+            commands.spawn((
+                Text2dBundle {
+                    text: Text::from_section("Main Player", TextStyle { font: font.clone(), font_size: NAME_TEXT_FONT_SIZE, color: NAME_TEXT_COLOR }),
+                    transform: Transform::from_xyz(x - NAME_TEXT_OFFSET_X, y - NAME_TEXT_OFFSET_Y - 20.0, 0.0),
+                    ..default()
+                },
+                GameItem,
+            ));
         }
-
-        // Text of a Player's name on top of a hand
-        commands.spawn((
-            Text2dBundle {
-                text: Text::from_section(format!("Player {}", i + 1), TextStyle { font: font.clone(), font_size: 50.0, color: NAME_TEXT_COLOR }),
-                transform: Transform::from_xyz(x - NAME_TEXT_OFFSET_X, y - NAME_TEXT_OFFSET_Y, 0.0),
-                ..default()
-            },
-            GameItem,
-        ));
-
     }
 
     /************ Create discard pile *************/
@@ -341,6 +356,7 @@ fn check_deck_bounds(
     mut card_event: EventWriter<PlayCard>,
     gameplay_rules: Res<GameplayState>,
 ) {
+    // TODO this check shouln't be here, but mouse_pressed cant read from GameplayState
     if gameplay_rules.player_turn != PlayerName::MainPlayer { return; }
 
     let window = window_q.single();
@@ -415,10 +431,14 @@ fn draw_card(
     mut deck_q: Query<&mut Deck>,
     asset_server: Res<AssetServer>,
     mut event: EventReader<DrawCard>,
+    mut game_rules: ResMut<GameplayState>,
+    rules: Res<Rules>,
 ) {
     // Continue only on receiving an event
     for _ in event.iter()
     {
+        if !rules.no_skip && game_rules.player_drawn_card { return; }
+
         let mut deck = deck_q.single_mut();
 
         // Check whether there are anymore cards in deck
@@ -443,6 +463,7 @@ fn draw_card(
             ));
 
             player.cards.push(card);
+            game_rules.player_drawn_card = true;
         }
         else
         {
@@ -499,6 +520,7 @@ fn play_card(
 
         // Add a played card to discard pile
         pile.cards.push(card);
+        gameplay.player_drawn_card = false;
         
         // In case only 1 player in a lobby, don't pass a turn
         // TODO stackable cards logic
@@ -555,25 +577,14 @@ fn bot_play(
     }
 }
 
-fn menu(
-    mut next_state: ResMut<NextState<GameState>>,
-    key: Res<Input<KeyCode>>,
-) {
-    if key.just_pressed(KeyCode::Escape)
-    {
-        next_state.set(GameState::Menu);
-    }
-}
-
 fn mouse_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool
 {
     mouse_button_input.just_pressed(MouseButton::Left)
 }
 
 fn test(
-    camera_q: Query<(&Camera, &GlobalTransform)>,
-    mut game_rules: ResMut<GameplayState>,
-    mut player_q: Query<&mut Player, With<MainPlayer>>,
+    game_rules: Res<GameplayState>,
+    rules: Res<Rules>,
     discard_pile_q: Query<&DiscardPile>,
     deck_q: Query<&Deck>,
     id_q: Query<&Id>,
@@ -583,10 +594,7 @@ fn test(
     let window = window_q.single();
 
     if key.just_pressed(KeyCode::D) {
-        let (camera, camera_transform) = camera_q.single();
-        let cursor_pos = window.cursor_position().unwrap();
-        let final_dest = camera.viewport_to_world(camera_transform, cursor_pos).map(|ray| ray.origin.truncate()).unwrap();
-        info!("ray pos: {:?}", final_dest);
+        info!("GameState: {:?}\nRules: {:?}", game_rules, rules);
     }
 
     if key.just_pressed(KeyCode::T) {
@@ -638,7 +646,7 @@ impl fmt::Display for Suit {
 impl Default for BotWaiting {
     fn default() -> Self {
         BotWaiting {
-            event_timer: Timer::from_seconds(2.0, TimerMode::Repeating),
+            event_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
         }
     }
 }

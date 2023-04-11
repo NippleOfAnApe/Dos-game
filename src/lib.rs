@@ -1,9 +1,13 @@
 #![feature(variant_count)]
 mod menu;
 mod game;
+mod fullscreen;
+mod game_ui;
 
 use crate::menu::MenuPlugin;
 use crate::game::GamePlugin;
+use crate::game_ui::GameUIPlugin;
+use crate::fullscreen::FullViewportPlugin;
 
 use bevy::prelude::*;
 
@@ -49,7 +53,11 @@ impl Plugin for MainPlugin
             .insert_resource(DisplayQuality::Medium)
             .add_startup_system(setup)
             .add_plugin(MenuPlugin)
-            .add_plugin(GamePlugin);
+            .add_plugin(GamePlugin)
+            .add_plugin(GameUIPlugin);
+
+            #[cfg(target_family = "wasm")]
+            app.add_plugin(FullViewportPlugin);
     }
 }
 
