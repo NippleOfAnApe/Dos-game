@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use crate::{GameState, Rules};
 use crate::game::{GameItem, GameplayState, PlayerName};
-use crate::menu::{TEXT_COLOR, NORMAL_BUTTON};
+use crate::menu::{TEXT_COLOR, NORMAL_BUTTON, PRESSED_BUTTON, HOVERED_BUTTON};
 use num::FromPrimitive;         //access enum values via integer
 
 #[derive(Component)]
@@ -21,7 +21,7 @@ impl Plugin for GameUIPlugin
     {
         app.add_event::<GoMenu>()
             .add_system(ui_setup.in_schedule(OnEnter(GameState::Game)))
-            .add_systems((keyboard_action, ui_button_action, go_to_menu).in_set(OnUpdate(GameState::Game)));
+            .add_systems((keyboard_action, ui_button_action, button_colors, go_to_menu).in_set(OnUpdate(GameState::Game)));
     }
 }
 
@@ -30,8 +30,6 @@ fn ui_setup(
     asset_server: Res<AssetServer>,
     rules: Res<Rules>,
 ) {
-    if rules.no_skip || rules.num_players == 1 { return; }
-
     commands
         .spawn((
             ButtonBundle {
@@ -62,7 +60,17 @@ fn ui_setup(
                     color: TEXT_COLOR,
                 }
             ));
+            parent.spawn(TextBundle::from_section(
+                "[ esc ]",
+                TextStyle {
+                    font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                    font_size: 20.0,
+                    color: TEXT_COLOR,
+                }
+            ));
         });
+
+    if rules.no_skip || rules.num_players == 1 { return; }
 
     commands
         .spawn((
@@ -115,19 +123,15 @@ fn ui_button_action(
     {
         if *interaction == Interaction::Clicked
         {
-            match button_action {
+            match button_action
+            {
                 InGameButtonAction::Skip => {
                     if !gameplay_rules.player_drawn_card { return; }
 
                     gameplay_rules.player_drawn_card = false;
-                    if !rules.clockwise
-                    {
-                        gameplay_rules.player_turn = PlayerName::from_usize(1).unwrap();
-                    }
-                    else
-                    {
-                        gameplay_rules.player_turn = PlayerName::from_usize(rules.num_players - 1).unwrap();
-                    }
+
+                    if !rules.clockwise { gameplay_rules.player_turn = PlayerName::from_usize(1).unwrap(); }
+                    else { gameplay_rules.player_turn = PlayerName::from_usize(rules.num_players - 1).unwrap(); }
                 }
                 InGameButtonAction::Menu => menu_event.send_default(),
             }
@@ -156,6 +160,18 @@ fn keyboard_action(
         else
         {
             gameplay_rules.player_turn = PlayerName::from_usize(rules.num_players - 1).unwrap();
+        }
+    }
+}
+
+fn button_colors(
+    mut interaction_query: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<Button>)>
+) {
+    for (interaction, mut color) in &mut interaction_query {
+        *color = match *interaction {
+            Interaction::Clicked => PRESSED_BUTTON.into(),
+            Interaction::Hovered => HOVERED_BUTTON.into(),
+            Interaction::None => NORMAL_BUTTON.into(),
         }
     }
 }

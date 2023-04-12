@@ -1,12 +1,14 @@
 use bevy::prelude::*;
 use crate::{despawn_screen, GameState, DisplayQuality, Rules};
 
-pub const TEXT_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
-
-pub const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
-const HOVERED_PRESSED_BUTTON: Color = Color::rgb(0.25, 0.65, 0.25);
-const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
+const BG_COLOR: Color = Color::rgb(1.0, 0.93, 0.87);
+const TITLE_COLOR: Color = Color::rgb(1.0, 0.34, 0.2);
+pub const TEXT_COLOR: Color = Color::rgb(0.1, 0.1, 0.1);
+pub const NORMAL_BUTTON: Color = Color::rgb(0.97, 0.77, 0.06);
+pub const HOVERED_BUTTON: Color = Color::rgb(0.83, 0.67, 0.05);
+pub const HOVERED_PRESSED_BUTTON: Color = Color::rgb(0.7, 0.0, 0.2);
+pub const PRESSED_BUTTON: Color = Color::rgb(0.78, 0.0, 0.22);
+const FONT_SIZE: f32 = 42.0;
 
 // State used for the current menu screen
 #[derive(Clone, Copy, Default, Eq, PartialEq, Debug, Hash, States)]
@@ -57,6 +59,15 @@ enum RulesButtonAction
 #[derive(Component)]
 struct PlayersNumberText;
 
+#[derive(Component, PartialEq, Eq)]
+enum RuleButtonXMark
+{
+    Stackable,
+    Turbo,
+    Clockwise,
+    NoSkip,
+}
+
 pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
@@ -85,7 +96,7 @@ impl Plugin for MenuPlugin {
                 despawn_screen::<OnRulesSettings>.in_schedule(OnExit(MenuState::SettingsRules)),
             ))
             // Common systems to all screens that handles buttons behaviour
-            .add_systems((menu_action, button_system, test).in_set(OnUpdate(GameState::Menu)));
+            .add_systems((menu_action, test, button_system).in_set(OnUpdate(GameState::Menu)));
     }
 }
 
@@ -134,13 +145,15 @@ fn setting_button<T: Resource + Component + PartialEq + Copy>(
 
 fn rules_button_action(
     interaction_q: Query<(&Interaction, &RulesButtonAction, Entity), (Changed<Interaction>, With<Button>)>,
-    mut text_q: Query<&mut Text, With<PlayersNumberText>>,
+    mut number_text_q: Query<&mut Text, With<PlayersNumberText>>,
+    mut x_text_q: Query<(&mut Text, &RuleButtonXMark), Without<PlayersNumberText>>,
     mut rules: ResMut<Rules>,
     mut commands: Commands,
 ) {
+    // TODO send events to a unified system for rules to accomodate handling menu with buttons
     for (interaction, button_action, entity) in &interaction_q
     {
-        let mut text_number = text_q.single_mut();
+        let mut text_number = number_text_q.single_mut();
         if *interaction == Interaction::Clicked
         {
             match button_action {
@@ -154,8 +167,13 @@ fn rules_button_action(
                 },
                 RulesButtonAction::ToggleStackable => {
                     rules.stackable_cards = !rules.stackable_cards;
-                    if rules.stackable_cards { commands.entity(entity).insert(SelectedOption); }
-                    else { commands.entity(entity).remove::<SelectedOption>(); }
+                    let x = if rules.stackable_cards { "x" } else { "" };
+                    'inner: for (mut text, marker) in x_text_q.iter_mut()
+                    {
+                        if *marker != RuleButtonXMark::Stackable { continue 'inner; }
+                        text.sections[0].value = format!("{}", x);
+                        break 'inner;
+                    }
                 }
                 RulesButtonAction::ToggleTurbo => {
                     rules.turbo = !rules.turbo;
@@ -164,13 +182,23 @@ fn rules_button_action(
                 }
                 RulesButtonAction::ToggleClockwise => {
                     rules.clockwise = !rules.clockwise;
-                    if rules.clockwise { commands.entity(entity).insert(SelectedOption); }
-                    else { commands.entity(entity).remove::<SelectedOption>(); }
+                    let x = if rules.clockwise { "x" } else { "" };
+                    'inner: for (mut text, marker) in x_text_q.iter_mut()
+                    {
+                        if *marker != RuleButtonXMark::Clockwise { continue 'inner; }
+                        text.sections[0].value = format!("{}", x);
+                        break 'inner;
+                    }
                 }
                 RulesButtonAction::ToggleNoSkip => {
                     rules.no_skip = !rules.no_skip;
-                    if rules.no_skip { commands.entity(entity).insert(SelectedOption); }
-                    else { commands.entity(entity).remove::<SelectedOption>(); }
+                    let x = if rules.no_skip { "x" } else { "" };
+                    'inner: for (mut text, marker) in x_text_q.iter_mut()
+                    {
+                        if *marker != RuleButtonXMark::NoSkip { continue 'inner; }
+                        text.sections[0].value = format!("{}", x);
+                        break 'inner;
+                    }
                 }
             }
         }
@@ -187,7 +215,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>)
     let font = asset_server.load("fonts/Vividly.otf");
     // Common style for all buttons on the screen
     let button_style = Style {
-        size: Size::new(Val::Px(250.0), Val::Px(65.0)),
+        size: Size::new(Val::Px(220.0), Val::Px(65.0)),
         margin: UiRect::all(Val::Px(20.0)),
         justify_content: JustifyContent::Center,
         align_items: AlignItems::Center,
@@ -195,7 +223,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>)
     };
     let button_text_style = TextStyle {
         font: font.clone(),
-        font_size: 40.0,
+        font_size: FONT_SIZE,
         color: TEXT_COLOR,
     };
 
@@ -220,7 +248,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>)
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: Color::DARK_GREEN.into(),
+                    background_color: BG_COLOR.into(),
                     ..default()
                 })
                 .with_children(|parent| {
@@ -230,8 +258,8 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>)
                             "Dos",
                             TextStyle {
                                 font: font.clone(),
-                                font_size: 100.0,
-                                color: Color::GOLD,
+                                font_size: 120.0,
+                                color: TITLE_COLOR,
                             },
                         )
                         .with_style(Style {
@@ -267,7 +295,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>)
                         ))
                         .with_children(|parent| {
                             parent.spawn(TextBundle::from_section(
-                                "Display",
+                                "Visuals",
                                 button_text_style.clone(),
                             ));
                         });
@@ -297,7 +325,7 @@ fn display_settings_menu_setup(
     display_quality: Res<DisplayQuality>,
 ) {
     let button_style = Style {
-        size: Size::new(Val::Px(200.0), Val::Px(65.0)),
+        size: Size::new(Val::Px(250.0), Val::Px(65.0)),
         margin: UiRect::all(Val::Px(20.0)),
         justify_content: JustifyContent::Center,
         align_items: AlignItems::Center,
@@ -305,7 +333,7 @@ fn display_settings_menu_setup(
     };
     let button_text_style = TextStyle {
         font: asset_server.load("fonts/Vividly.otf"),
-        font_size: 40.0,
+        font_size: FONT_SIZE,
         color: TEXT_COLOR,
     };
 
@@ -330,7 +358,7 @@ fn display_settings_menu_setup(
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: Color::DARK_GREEN.into(),
+                    background_color: BG_COLOR.into(),
                     ..default()
                 })
                 .with_children(|parent| {
@@ -342,20 +370,20 @@ fn display_settings_menu_setup(
                                 align_items: AlignItems::Center,
                                 ..default()
                             },
-                            background_color: Color::DARK_GREEN.into(),
+                            background_color: BG_COLOR.into(),
                             ..default()
                         })
                         .with_children(|parent| {
                             // Display a label for the current setting
                             parent.spawn(TextBundle::from_section(
-                                "Display Quality",
+                                "Theme",
                                 button_text_style.clone(),
                             ));
                             // Display a button for each possible value
                             for quality_setting in [
-                                DisplayQuality::Low,
-                                DisplayQuality::Medium,
-                                DisplayQuality::High,
+                                DisplayQuality::Light,
+                                DisplayQuality::Dark,
+                                DisplayQuality::Avocado,
                             ] {
                                 let mut entity = parent.spawn(ButtonBundle {
                                     style: Style {
@@ -407,7 +435,7 @@ fn rules_settings_menu_setup(
     };
     let button_text_style = TextStyle {
         font: asset_server.load("fonts/Vividly.otf"),
-        font_size: 40.0,
+        font_size: FONT_SIZE,
         color: TEXT_COLOR,
     };
 
@@ -432,114 +460,10 @@ fn rules_settings_menu_setup(
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: Color::DARK_GREEN.into(),
+                    background_color: BG_COLOR.into(),
                     ..default()
                 })
                 .with_children(|parent| {
-                    // Clockwise
-                    parent
-                        .spawn(NodeBundle {
-                            style: Style {
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            background_color: Color::DARK_GREEN.into(),
-                            ..default()
-                        })
-                        .with_children(|parent| {
-                            parent.spawn(TextBundle::from_section(
-                                "Clockwise",
-                                button_text_style.clone(),
-                            ));
-                            let mut entity = parent.spawn(ButtonBundle {
-                                style: Style {
-                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
-                                    ..button_style.clone()
-                                },
-                                background_color: NORMAL_BUTTON.into(),
-                                ..default()
-                            });
-                            entity.insert(RulesButtonAction::ToggleClockwise);
-                            if rules.clockwise {entity.insert(SelectedOption);}
-                        });
-                    // Stackable cards
-                    parent
-                        .spawn(NodeBundle {
-                            style: Style {
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            background_color: Color::DARK_GREEN.into(),
-                            ..default()
-                        })
-                        .with_children(|parent| {
-                            parent.spawn(TextBundle::from_section(
-                                "Stackable cards",
-                                button_text_style.clone(),
-                            ));
-                            let mut entity = parent.spawn(ButtonBundle {
-                                style: Style {
-                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
-                                    ..button_style.clone()
-                                },
-                                background_color: NORMAL_BUTTON.into(),
-                                ..default()
-                            });
-                            entity.insert(RulesButtonAction::ToggleStackable);
-                            if rules.stackable_cards {entity.insert(SelectedOption);}
-                        });
-                    // Turbo mode
-                    parent
-                        .spawn(NodeBundle {
-                            style: Style {
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            background_color: Color::DARK_GREEN.into(),
-                            ..default()
-                        })
-                        .with_children(|parent| {
-                            parent.spawn(TextBundle::from_section(
-                                "Turbo",
-                                button_text_style.clone(),
-                            ));
-                            let mut entity = parent.spawn(ButtonBundle {
-                                style: Style {
-                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
-                                    ..button_style.clone()
-                                },
-                                background_color: NORMAL_BUTTON.into(),
-                                ..default()
-                            });
-                            entity.insert(RulesButtonAction::ToggleTurbo);
-                            if rules.stackable_cards {entity.insert(SelectedOption);}
-                        });
-                    // Draw until can play
-                    parent
-                        .spawn(NodeBundle {
-                            style: Style {
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            background_color: Color::DARK_GREEN.into(),
-                            ..default()
-                        })
-                        .with_children(|parent| {
-                            parent.spawn(TextBundle::from_section(
-                                "No skip",
-                                button_text_style.clone(),
-                            ));
-                            let mut entity = parent.spawn(ButtonBundle {
-                                style: Style {
-                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
-                                    ..button_style.clone()
-                                },
-                                background_color: NORMAL_BUTTON.into(),
-                                ..default()
-                            });
-                            entity.insert(RulesButtonAction::ToggleNoSkip);
-                            if rules.no_skip {entity.insert(SelectedOption);}
-                        });
                     // Number of Players
                     parent
                         .spawn(NodeBundle {
@@ -547,7 +471,7 @@ fn rules_settings_menu_setup(
                                 align_items: AlignItems::Center,
                                 ..default()
                             },
-                            background_color: Color::DARK_GREEN.into(),
+                            background_color: BG_COLOR.into(),
                             ..default()
                         })
                         .with_children(|parent| {
@@ -592,6 +516,131 @@ fn rules_settings_menu_setup(
                                 ));
                             });
                         });
+                    // Stackable cards
+                    parent
+                        .spawn(NodeBundle {
+                            style: Style {
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: BG_COLOR.into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            parent.spawn(TextBundle::from_section(
+                                "Stackable cards",
+                                button_text_style.clone(),
+                            ));
+                            parent
+                                .spawn((ButtonBundle {
+                                    style: Style {
+                                        size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                        ..button_style.clone()
+                                    },
+                                    background_color: NORMAL_BUTTON.into(),
+                                    ..default()
+                                },
+                                RulesButtonAction::ToggleStackable,
+                            )).with_children(|parent| {
+                                let x = if rules.stackable_cards { "x" } else { "" };
+                                parent.spawn((TextBundle::from_section(
+                                    format!("{}", x),
+                                    button_text_style.clone(),
+                                ), RuleButtonXMark::Stackable));
+                            });
+                        });
+                    // No Skip
+                    parent
+                        .spawn(NodeBundle {
+                            style: Style {
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: BG_COLOR.into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            parent.spawn(TextBundle::from_section(
+                                "No skip",
+                                button_text_style.clone(),
+                            ));
+                            parent
+                                .spawn((ButtonBundle {
+                                    style: Style {
+                                        size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                        ..button_style.clone()
+                                    },
+                                    background_color: NORMAL_BUTTON.into(),
+                                    ..default()
+                                },
+                                RulesButtonAction::ToggleNoSkip,
+                            )).with_children(|parent| {
+                                let x = if rules.no_skip { "x" } else { "" };
+                                parent.spawn((TextBundle::from_section(
+                                    format!("{}", x),
+                                    button_text_style.clone(),
+                                ), RuleButtonXMark::NoSkip));
+                            });
+                        });
+                    // Clockwise
+                    parent
+                        .spawn(NodeBundle {
+                            style: Style {
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: BG_COLOR.into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            parent.spawn(TextBundle::from_section(
+                                "Clockwise",
+                                button_text_style.clone(),
+                            ));
+                            parent
+                                .spawn((ButtonBundle {
+                                    style: Style {
+                                        size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                        ..button_style.clone()
+                                    },
+                                    background_color: NORMAL_BUTTON.into(),
+                                    ..default()
+                                },
+                                RulesButtonAction::ToggleClockwise,
+                            )).with_children(|parent| {
+                                let x = if rules.no_skip { "x" } else { "" };
+                                parent.spawn((TextBundle::from_section(
+                                    format!("{}", x),
+                                    button_text_style.clone(),
+                                ), RuleButtonXMark::Clockwise));
+                            });
+                        });
+                    // Turbo mode
+                    parent
+                        .spawn(NodeBundle {
+                            style: Style {
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: BG_COLOR.into(),
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            parent.spawn(TextBundle::from_section(
+                                "Turbo",
+                                button_text_style.clone(),
+                            ));
+                            let mut entity = parent.spawn(ButtonBundle {
+                                style: Style {
+                                    size: Size::new(Val::Px(40.0), Val::Px(40.0)),
+                                    ..button_style.clone()
+                                },
+                                background_color: NORMAL_BUTTON.into(),
+                                ..default()
+                            });
+                            entity.insert(RulesButtonAction::ToggleTurbo);
+                            if rules.turbo {entity.insert(SelectedOption);}
+                        });
                     // Back to menu
                     parent
                         .spawn((
@@ -633,11 +682,11 @@ fn menu_action(
 }
 
 fn test(
-    key: Res<Input<KeyCode>>,
     rules: Res<Rules>,
+    key: Res<Input<KeyCode>>,
 ) {
-    if key.just_pressed(KeyCode::Q)
+    if key.just_pressed(KeyCode::D)
     {
-        info!("{:?}", *rules);
+        info!("Rules: {:?}", rules);
     }
 }

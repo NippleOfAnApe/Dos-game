@@ -21,12 +21,12 @@ enum GameState {
 // One of the two settings that can be set through the menu. It will be a resource in the app
 #[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
 enum DisplayQuality {
-    Low,
-    Medium,
-    High,
+    Light,
+    Dark,
+    Avocado,
 }
 
-#[derive(Resource, Debug, Component, PartialEq, Eq, Clone, Copy)]
+#[derive(Resource, Debug, PartialEq, Eq, Clone, Copy)]
 struct Rules
 {
     num_players: usize,
@@ -50,7 +50,7 @@ impl Plugin for MainPlugin
                 clockwise: false,
                 no_skip: false,
             })
-            .insert_resource(DisplayQuality::Medium)
+            .insert_resource(DisplayQuality::Light)
             .add_startup_system(setup)
             .add_plugin(MenuPlugin)
             .add_plugin(GamePlugin)

@@ -14,7 +14,7 @@ use dos_game::*;
 
 fn main() {
     App::new()
-        .insert_resource(ClearColor(Color::rgb(0.2, 0.4, 0.3)))
+        .insert_resource(ClearColor(Color::rgb(0.7, 0.92, 0.95)))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Dos".into(),

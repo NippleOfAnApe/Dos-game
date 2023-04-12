@@ -16,12 +16,12 @@ use crate::{despawn_screen, GameState, Rules};
 use rand::{seq::SliceRandom, thread_rng};
 use num_derive::FromPrimitive;  //derive a trait on enum to access it with integer
 use num::FromPrimitive;         //access enum values via integer
+use crate::menu::TEXT_COLOR;
 
 //----------------------------------------------------------------------------------
 //  Game configurations
 //----------------------------------------------------------------------------------
 
-const NAME_TEXT_COLOR: Color = Color::rgb(0.6, 0.8, 0.9);
 const HAND_SIZE: usize = 7;
 
 const PLAYERS_WIDTH_DISTANCE: f32 = 500.0;
@@ -265,7 +265,7 @@ fn setup(
             // Text of a Player's name on top of a hand
             commands.spawn((
                 Text2dBundle {
-                    text: Text::from_section(format!("Player {}", i + 1), TextStyle { font: font.clone(), font_size: NAME_TEXT_FONT_SIZE, color: NAME_TEXT_COLOR }),
+                    text: Text::from_section(format!("Player {}", i + 1), TextStyle { font: font.clone(), font_size: NAME_TEXT_FONT_SIZE, color: TEXT_COLOR }),
                     transform: Transform::from_xyz(x - NAME_TEXT_OFFSET_X, y - NAME_TEXT_OFFSET_Y, 0.0),
                     ..default()
                 },
@@ -302,7 +302,7 @@ fn setup(
             // Text of a Player's name on top of a hand
             commands.spawn((
                 Text2dBundle {
-                    text: Text::from_section("Main Player", TextStyle { font: font.clone(), font_size: NAME_TEXT_FONT_SIZE, color: NAME_TEXT_COLOR }),
+                    text: Text::from_section("Main Player", TextStyle { font: font.clone(), font_size: NAME_TEXT_FONT_SIZE, color: TEXT_COLOR }),
                     transform: Transform::from_xyz(x - NAME_TEXT_OFFSET_X, y - NAME_TEXT_OFFSET_Y - 20.0, 0.0),
                     ..default()
                 },
